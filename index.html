@@ -1,0 +1,671 @@
+<!doctype html>
+<html lang="id">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Sistem Management Trucking</title>
+  <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+  <div class="bg-shape shape-1"></div>
+  <div class="bg-shape shape-2"></div>
+
+  <div class="app">
+    <header class="hero">
+      <div>
+        <p class="eyebrow">OPERASIONAL TRUCKING</p>
+        <h1>Sistem Management Trucking</h1>
+        <p class="subtitle">Uang Jalan - Operasional - Pertanggungjawaban</p>
+      </div>
+      <div class="header-right">
+        <div class="chip" id="todayChip">-</div>
+        <div class="chip chip-muted" id="clockChip">-</div>
+        <div class="chip chip-cloud" id="cloudStatusChip">Mode Lokal</div>
+        <div class="chip chip-role" id="teamRoleChip">Role: Lokal</div>
+        <button class="ghost-btn small-btn" type="button" id="openAuthBtn">Login Cloud</button>
+        <button class="ghost-btn small-btn hidden" type="button" id="syncNowBtn">Sync</button>
+        <button class="ghost-btn small-btn hidden" type="button" id="logoutBtn">Logout</button>
+      </div>
+    </header>
+
+    <nav class="tabs" id="tabs">
+      <button class="tab-btn active" data-tab="dashboard">Dashboard</button>
+      <button class="tab-btn" data-tab="jobs">Job Order</button>
+      <button class="tab-btn" data-tab="advances">Pengajuan Uang Jalan</button>
+      <button class="tab-btn" data-tab="disbursement">Pencairan</button>
+      <button class="tab-btn" data-tab="lpj">LPJ Driver</button>
+      <button class="tab-btn" data-tab="settlement">Verifikasi & Settlement</button>
+      <button class="tab-btn" data-tab="reports">Laporan Bulanan</button>
+      <button class="tab-btn" data-tab="print">Print Form</button>
+      <button class="tab-btn" data-tab="routes">Master Rute</button>
+    </nav>
+
+    <main>
+      <section class="panel active" id="tab-dashboard">
+        <div class="kpi-grid">
+          <article class="kpi-card">
+            <p>Total Job</p>
+            <h3 id="kpiTotalJob">0</h3>
+          </article>
+          <article class="kpi-card">
+            <p>Job Aktif</p>
+            <h3 id="kpiActiveJob">0</h3>
+          </article>
+          <article class="kpi-card">
+            <p>LPJ Overdue</p>
+            <h3 id="kpiOverdue">0</h3>
+          </article>
+          <article class="kpi-card">
+            <p>Uang Jalan Bulan Ini</p>
+            <h3 id="kpiAdvanceMonth">Rp0</h3>
+          </article>
+          <article class="kpi-card">
+            <p>Pengembalian Bulan Ini</p>
+            <h3 id="kpiReturnMonth">Rp0</h3>
+          </article>
+          <article class="kpi-card">
+            <p>Reimburse Bulan Ini</p>
+            <h3 id="kpiReimburseMonth">Rp0</h3>
+          </article>
+        </div>
+
+        <div class="card">
+          <div class="card-head">
+            <h2>Antrian Tindakan</h2>
+          </div>
+          <div class="table-wrap">
+            <table>
+              <thead>
+                <tr>
+                  <th>Kategori</th>
+                  <th>Nomor</th>
+                  <th>Driver</th>
+                  <th>Status</th>
+                  <th>Keterangan</th>
+                </tr>
+              </thead>
+              <tbody id="dashboardQueueBody"></tbody>
+            </table>
+          </div>
+        </div>
+      </section>
+
+      <section class="panel" id="tab-jobs">
+        <div class="card">
+          <div class="card-head">
+            <h2>Buat Job Order</h2>
+          </div>
+          <form id="jobForm" class="form-grid">
+            <label>Nama Customer
+              <input type="text" id="jobCustomer" required>
+            </label>
+            <label>No DO / SP2
+              <input type="text" id="jobDoSp2" required>
+            </label>
+            <label>Container No
+              <input type="text" id="jobContainerNo" required>
+            </label>
+            <label>Size Container
+              <select id="jobContainerSize" required>
+                <option value="20">20</option>
+                <option value="40">40</option>
+              </select>
+            </label>
+            <label>Rute
+              <input type="text" id="jobRoute" list="routeOptions" required>
+              <datalist id="routeOptions"></datalist>
+            </label>
+            <label class="align-end">
+              <button class="ghost-btn" type="button" id="applyRouteStandardBtn">Isi Estimasi dari Master Rute</button>
+            </label>
+            <label>Driver
+              <input type="text" id="jobDriver" required>
+            </label>
+            <label>No Truck
+              <input type="text" id="jobTruck" required>
+            </label>
+            <label>Tanggal Loading
+              <input type="date" id="jobLoadingDate" required>
+            </label>
+            <label>Estimasi Kembali Pool
+              <input type="date" id="jobEtaReturnDate" required>
+            </label>
+            <label>Estimasi Jarak (KM)
+              <input type="number" min="0" step="1" id="jobDistanceKm" required>
+            </label>
+            <div class="spacer"></div>
+
+            <label>Estimasi Solar
+              <input type="number" min="0" step="1000" id="jobEstSolar" class="job-cost" required>
+            </label>
+            <label>Estimasi Tol
+              <input type="number" min="0" step="1000" id="jobEstTol" class="job-cost" required>
+            </label>
+            <label>Estimasi Uang Makan
+              <input type="number" min="0" step="1000" id="jobEstMeal" class="job-cost" required>
+            </label>
+            <label>Estimasi Parkir/Pelabuhan
+              <input type="number" min="0" step="1000" id="jobEstParking" class="job-cost" required>
+            </label>
+            <label>Estimasi Lain-lain
+              <input type="number" min="0" step="1000" id="jobEstOther" class="job-cost" required>
+            </label>
+            <label>Total Uang Jalan
+              <input type="text" id="jobEstTotal" readonly>
+            </label>
+            <div class="form-actions">
+              <button type="submit" class="primary-btn">Simpan Job Order</button>
+            </div>
+          </form>
+        </div>
+
+        <div class="card">
+          <div class="card-head">
+            <h2>Daftar Job Order</h2>
+          </div>
+          <div class="table-wrap">
+            <table>
+              <thead>
+                <tr>
+                  <th>No Job</th>
+                  <th>Customer</th>
+                  <th>Rute</th>
+                  <th>Driver</th>
+                  <th>Truck</th>
+                  <th>Total Estimasi</th>
+                  <th>Status</th>
+                </tr>
+              </thead>
+              <tbody id="jobsTableBody"></tbody>
+            </table>
+          </div>
+        </div>
+      </section>
+
+      <section class="panel" id="tab-advances">
+        <div class="card">
+          <div class="card-head">
+            <h2>Form Pengajuan Uang Jalan</h2>
+          </div>
+          <form id="advanceForm" class="form-grid">
+            <label>Tanggal Pengajuan
+              <input type="date" id="advanceDate" required>
+            </label>
+            <label>No Job
+              <select id="advanceJobId" required></select>
+            </label>
+            <label>Nama Driver
+              <input type="text" id="advanceDriver" readonly>
+            </label>
+            <label>No Truck
+              <input type="text" id="advanceTruck" readonly>
+            </label>
+            <label>Rute
+              <input type="text" id="advanceRoute" readonly>
+            </label>
+            <label>Estimasi Biaya
+              <input type="text" id="advanceEstimate" readonly>
+            </label>
+            <label>Total Uang Jalan Diminta
+              <input type="number" min="0" step="1000" id="advanceRequestedAmount" required>
+            </label>
+            <label>Status Pembayaran
+              <select id="advancePaymentType" required>
+                <option value="Cash">Cash</option>
+                <option value="Transfer">Transfer</option>
+                <option value="E-Wallet">E-Wallet</option>
+              </select>
+            </label>
+            <div class="form-actions">
+              <button type="submit" class="primary-btn">Ajukan Uang Jalan</button>
+            </div>
+          </form>
+        </div>
+
+        <div class="card">
+          <div class="card-head">
+            <h2>Antrian Approval Uang Jalan</h2>
+          </div>
+          <div class="table-wrap">
+            <table>
+              <thead>
+                <tr>
+                  <th>No Pengajuan</th>
+                  <th>No Job</th>
+                  <th>Driver</th>
+                  <th>Nominal</th>
+                  <th>Status</th>
+                  <th>Aksi</th>
+                </tr>
+              </thead>
+              <tbody id="advanceTableBody"></tbody>
+            </table>
+          </div>
+        </div>
+      </section>
+
+      <section class="panel" id="tab-disbursement">
+        <div class="card">
+          <div class="card-head">
+            <h2>Pencairan Uang Jalan</h2>
+          </div>
+          <form id="disbursementForm" class="form-grid">
+            <label>Tanggal Pencairan
+              <input type="date" id="disbursementDate" required>
+            </label>
+            <label>No Pengajuan
+              <select id="disbursementAdvanceId" required></select>
+            </label>
+            <label>Driver
+              <input type="text" id="disbursementDriver" readonly>
+            </label>
+            <label>No Truck
+              <input type="text" id="disbursementTruck" readonly>
+            </label>
+            <label>Nominal Dicairkan
+              <input type="text" id="disbursementAmount" readonly>
+            </label>
+            <label>Metode
+              <select id="disbursementMethod" required>
+                <option value="Cash">Cash</option>
+                <option value="Transfer">Transfer</option>
+                <option value="E-Wallet">E-Wallet</option>
+              </select>
+            </label>
+            <label>Keterangan (No Rek / E-Wallet)
+              <input type="text" id="disbursementNote" placeholder="Opsional">
+            </label>
+            <div class="form-actions">
+              <button type="submit" class="primary-btn">Cairkan & Catat Register</button>
+            </div>
+          </form>
+        </div>
+
+        <div class="card">
+          <div class="card-head">
+            <h2>Register Uang Jalan Trucking</h2>
+          </div>
+          <div class="table-wrap">
+            <table>
+              <thead>
+                <tr>
+                  <th>No Register</th>
+                  <th>Tanggal</th>
+                  <th>Driver</th>
+                  <th>Truck</th>
+                  <th>No Job</th>
+                  <th>Metode</th>
+                  <th>Nominal</th>
+                </tr>
+              </thead>
+              <tbody id="disbursementTableBody"></tbody>
+            </table>
+          </div>
+        </div>
+      </section>
+
+      <section class="panel" id="tab-lpj">
+        <div class="card">
+          <div class="card-head">
+            <h2>LPJ Uang Jalan (Maks 1 x 24 Jam)</h2>
+          </div>
+          <form id="lpjForm" class="form-grid">
+            <label>No Register Uang Jalan
+              <select id="lpjDisbursementId" required></select>
+            </label>
+            <label>No Job
+              <input type="text" id="lpjJobNo" readonly>
+            </label>
+            <label>Driver
+              <input type="text" id="lpjDriver" readonly>
+            </label>
+            <label>No Truck
+              <input type="text" id="lpjTruck" readonly>
+            </label>
+            <label>Tanggal Kembali ke Pool
+              <input type="datetime-local" id="lpjReturnDatetime" required>
+            </label>
+            <label>Tanggal Submit LPJ
+              <input type="datetime-local" id="lpjSubmitDatetime" required>
+            </label>
+            <label>Jarak Aktual (KM)
+              <input type="number" min="0" step="1" id="lpjActualDistance" required>
+            </label>
+
+            <label>Solar
+              <input type="number" min="0" step="1000" id="lpjSolar" class="lpj-cost" required>
+            </label>
+            <label>Tol
+              <input type="number" min="0" step="1000" id="lpjTol" class="lpj-cost" required>
+            </label>
+            <label>Parkir / Pelabuhan
+              <input type="number" min="0" step="1000" id="lpjParking" class="lpj-cost" required>
+            </label>
+            <label>Makan
+              <input type="number" min="0" step="1000" id="lpjMeal" class="lpj-cost" required>
+            </label>
+            <label>Lain-lain
+              <input type="number" min="0" step="1000" id="lpjOther" class="lpj-cost" required>
+            </label>
+            <label>Total Realisasi
+              <input type="text" id="lpjTotal" readonly>
+            </label>
+
+            <fieldset class="checks">
+              <legend>Bukti Pengeluaran</legend>
+              <label><input type="checkbox" id="proofFuel"> Struk Solar</label>
+              <label><input type="checkbox" id="proofToll"> Struk Tol</label>
+              <label><input type="checkbox" id="proofParking"> Struk Parkir / Pelabuhan</label>
+              <label><input type="checkbox" id="proofWeighing"> Nota Timbangan / Bongkar Muat</label>
+              <label><input type="checkbox" id="proofRepair"> Nota Perbaikan Darurat</label>
+              <label><input type="checkbox" id="proofOriginalRequired" required> Bukti asli sudah dikumpulkan (wajib)</label>
+            </fieldset>
+
+            <label>Keterangan Tambahan
+              <textarea id="lpjNotes" rows="2"></textarea>
+            </label>
+            <div class="form-actions">
+              <button type="submit" class="primary-btn">Kirim LPJ</button>
+            </div>
+          </form>
+        </div>
+
+        <div class="card">
+          <div class="card-head">
+            <h2>Daftar LPJ</h2>
+          </div>
+          <div class="table-wrap">
+            <table>
+              <thead>
+                <tr>
+                  <th>No LPJ</th>
+                  <th>No Job</th>
+                  <th>Driver</th>
+                  <th>Uang Jalan</th>
+                  <th>Realisasi</th>
+                  <th>Selisih</th>
+                  <th>Status Waktu</th>
+                  <th>Status Verifikasi</th>
+                </tr>
+              </thead>
+              <tbody id="lpjTableBody"></tbody>
+            </table>
+          </div>
+        </div>
+      </section>
+
+      <section class="panel" id="tab-settlement">
+        <div class="card">
+          <div class="card-head">
+            <h2>Verifikasi Finance LPJ</h2>
+          </div>
+          <div class="table-wrap">
+            <table>
+              <thead>
+                <tr>
+                  <th>No LPJ</th>
+                  <th>No Job</th>
+                  <th>Driver</th>
+                  <th>Selisih</th>
+                  <th>Status</th>
+                  <th>Aksi</th>
+                </tr>
+              </thead>
+              <tbody id="verificationTableBody"></tbody>
+            </table>
+          </div>
+        </div>
+
+        <div class="card">
+          <div class="card-head">
+            <h2>Proses Settlement</h2>
+          </div>
+          <form id="settlementForm" class="form-grid">
+            <label>No LPJ
+              <select id="settlementLpjId" required></select>
+            </label>
+            <label>Uang Jalan
+              <input type="text" id="settlementAdvanceAmount" readonly>
+            </label>
+            <label>Realisasi
+              <input type="text" id="settlementActualAmount" readonly>
+            </label>
+            <label>Selisih
+              <input type="text" id="settlementDifference" readonly>
+            </label>
+            <label>Tipe Settlement
+              <input type="text" id="settlementType" readonly>
+            </label>
+            <label>Metode
+              <select id="settlementMethod" required>
+                <option value="Cash">Cash</option>
+                <option value="Transfer">Transfer</option>
+                <option value="Potong Kasbon">Potong Kasbon</option>
+              </select>
+            </label>
+            <label>Tanggal Proses
+              <input type="date" id="settlementDate" required>
+            </label>
+            <div class="form-actions">
+              <button type="submit" class="primary-btn">Simpan Settlement</button>
+            </div>
+          </form>
+          <p class="hint">Bonus efisiensi otomatis: 20% jika sisa uang jalan &gt; Rp100.000.</p>
+        </div>
+
+        <div class="card">
+          <div class="card-head">
+            <h2>Riwayat Settlement</h2>
+          </div>
+          <div class="table-wrap">
+            <table>
+              <thead>
+                <tr>
+                  <th>No Settlement</th>
+                  <th>No Job</th>
+                  <th>Driver</th>
+                  <th>Tipe</th>
+                  <th>Nilai</th>
+                  <th>Bonus</th>
+                  <th>Tanggal</th>
+                  <th>Metode</th>
+                </tr>
+              </thead>
+              <tbody id="settlementTableBody"></tbody>
+            </table>
+          </div>
+        </div>
+      </section>
+
+      <section class="panel" id="tab-reports">
+        <div class="card">
+          <div class="card-head">
+            <h2>Laporan Bulanan Trucking</h2>
+          </div>
+          <form id="reportFilterForm" class="inline-form">
+            <label>Bulan
+              <input type="month" id="reportMonth" required>
+            </label>
+            <button type="submit" class="primary-btn">Tampilkan</button>
+            <button type="button" id="exportReportCsvBtn" class="ghost-btn">Export CSV</button>
+          </form>
+          <div class="kpi-grid compact">
+            <article class="kpi-card">
+              <p>Total Job</p>
+              <h3 id="reportTotalJobs">0</h3>
+            </article>
+            <article class="kpi-card">
+              <p>Total Biaya</p>
+              <h3 id="reportTotalCost">Rp0</h3>
+            </article>
+            <article class="kpi-card">
+              <p>Total Uang Jalan</p>
+              <h3 id="reportTotalAdvance">Rp0</h3>
+            </article>
+            <article class="kpi-card">
+              <p>Total Bonus Efisiensi</p>
+              <h3 id="reportTotalBonus">Rp0</h3>
+            </article>
+          </div>
+          <div class="table-wrap">
+            <table>
+              <thead>
+                <tr>
+                  <th>Truck</th>
+                  <th>Driver</th>
+                  <th>Total Job</th>
+                  <th>Total Biaya</th>
+                  <th>Solar / KM</th>
+                  <th>Biaya / KM</th>
+                  <th>Efisiensi</th>
+                  <th>Bonus</th>
+                </tr>
+              </thead>
+              <tbody id="reportTableBody"></tbody>
+            </table>
+          </div>
+        </div>
+      </section>
+
+      <section class="panel" id="tab-print">
+        <div class="card">
+          <div class="card-head">
+            <h2>Print Form Resmi</h2>
+          </div>
+          <form id="printForm" class="form-grid">
+            <label>Nama Perusahaan
+              <input type="text" id="printCompanyName" placeholder="Contoh: PT Multi Mitra Logistik">
+            </label>
+            <label>Tanggal Cetak
+              <input type="date" id="printDate">
+            </label>
+            <label>Jenis Dokumen
+              <select id="printDocType" required>
+                <option value="job">Job Order (JO)</option>
+                <option value="advance">Form Pengajuan Uang Jalan</option>
+                <option value="lpj">LPJ Uang Jalan</option>
+                <option value="cash-receipt">Bukti Penerimaan Kas</option>
+              </select>
+            </label>
+            <label>Nomor Dokumen
+              <select id="printRecordId" required></select>
+            </label>
+            <div class="form-actions">
+              <button type="button" id="previewPrintBtn" class="ghost-btn">Tampilkan Preview</button>
+              <button type="button" id="printNowBtn" class="primary-btn">Cetak Dokumen</button>
+            </div>
+          </form>
+        </div>
+
+        <div class="card">
+          <div class="card-head">
+            <h2>Preview Siap Tanda Tangan</h2>
+          </div>
+          <p class="hint" id="printPreviewEmpty">Pilih jenis dokumen dan nomor dokumen, lalu klik preview.</p>
+          <div id="printPreview" class="print-preview"></div>
+        </div>
+      </section>
+
+      <section class="panel" id="tab-routes">
+        <div class="card">
+          <div class="card-head">
+            <h2>Master Rute Biaya Standar</h2>
+          </div>
+          <form id="routeForm" class="form-grid">
+            <label>Nama Rute
+              <input type="text" id="routeName" required>
+            </label>
+            <label>Jarak Standar (KM)
+              <input type="number" min="0" step="1" id="routeDistance" required>
+            </label>
+            <label>Solar Standar
+              <input type="number" min="0" step="1000" id="routeSolar" required>
+            </label>
+            <label>Tol Standar
+              <input type="number" min="0" step="1000" id="routeTol" required>
+            </label>
+            <label>Makan Standar
+              <input type="number" min="0" step="1000" id="routeMeal" required>
+            </label>
+            <label>Parkir/Pelabuhan Standar
+              <input type="number" min="0" step="1000" id="routeParking" required>
+            </label>
+            <label>Lain-lain Standar
+              <input type="number" min="0" step="1000" id="routeOther" required>
+            </label>
+            <div class="form-actions">
+              <button type="submit" class="primary-btn">Simpan Master Rute</button>
+            </div>
+          </form>
+        </div>
+
+        <div class="card">
+          <div class="card-head">
+            <h2>Daftar Master Rute</h2>
+          </div>
+          <div class="table-wrap">
+            <table>
+              <thead>
+                <tr>
+                  <th>Rute</th>
+                  <th>Jarak</th>
+                  <th>Solar</th>
+                  <th>Tol</th>
+                  <th>Makan</th>
+                  <th>Parkir</th>
+                  <th>Lain-lain</th>
+                  <th>Total</th>
+                </tr>
+              </thead>
+              <tbody id="routeTableBody"></tbody>
+            </table>
+          </div>
+        </div>
+      </section>
+    </main>
+  </div>
+
+  <div class="modal-backdrop hidden" id="authModal">
+    <div class="modal-card">
+      <div class="card-head">
+        <h2>Login Cloud (Supabase)</h2>
+      </div>
+      <form id="authForm" class="form-grid">
+        <label>Email
+          <input type="email" id="authEmail" placeholder="nama@email.com" required>
+        </label>
+        <label>Password
+          <input type="password" id="authPassword" placeholder="Minimal 6 karakter" minlength="6" required>
+        </label>
+        <label>Team Code
+          <input type="text" id="authTeamCode" placeholder="Contoh: SGI-OPS">
+        </label>
+        <label>Nama Tim (opsional)
+          <input type="text" id="authTeamName" placeholder="Contoh: SGI Trucking">
+        </label>
+        <label>Role Tim
+          <select id="authRole">
+            <option value="operasional">Operasional</option>
+            <option value="finance">Finance</option>
+            <option value="admin">Admin</option>
+          </select>
+        </label>
+        <div class="form-actions">
+          <button type="submit" class="primary-btn" id="loginBtn">Login</button>
+          <button type="button" class="ghost-btn" id="registerBtn">Daftar</button>
+          <button type="button" class="ghost-btn" id="joinTeamBtn">Join Tim</button>
+          <button type="button" class="ghost-btn" id="closeAuthBtn">Tutup</button>
+        </div>
+      </form>
+      <p class="hint" id="authHint">
+        Login akun cloud, lalu join tim agar data operasional bisa dipakai bersama lintas perangkat.
+      </p>
+    </div>
+  </div>
+
+  <div class="toast-wrap" id="toastWrap"></div>
+  <script src="config.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+  <script src="app.js"></script>
+</body>
+</html>
