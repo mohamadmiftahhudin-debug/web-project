@@ -29,6 +29,7 @@ let cloudReady = false;
 let appConfig = null;
 let currentTeam = null;
 let currentRole = "local";
+let inlinePrintCleanupTimer = null;
 
 const els = {};
 
@@ -2150,35 +2151,42 @@ function printCurrentDocument() {
   const ctx = getCurrentPrintContext(true);
   if (!ctx) return;
 
-  const popup = window.open("", "_blank", "noopener,noreferrer,width=1100,height=900");
-  if (!popup) {
-    showToast("Popup print diblokir browser. Izinkan popup lalu ulangi.", true);
+  // Pastikan dokumen terbaru tampil di preview.
+  els.printPreview.innerHTML = ctx.documentHtml;
+  els.printPreviewEmpty.style.display = "none";
+
+  const previousTitle = document.title;
+  const cleanup = () => {
+    if (inlinePrintCleanupTimer) {
+      clearTimeout(inlinePrintCleanupTimer);
+      inlinePrintCleanupTimer = null;
+    }
+    document.body.classList.remove("inline-print-mode");
+    document.title = previousTitle;
+  };
+
+  document.title = ctx.title;
+  document.body.classList.add("inline-print-mode");
+
+  const onAfterPrint = () => {
+    window.removeEventListener("afterprint", onAfterPrint);
+    cleanup();
+  };
+  window.addEventListener("afterprint", onAfterPrint, { once: true });
+
+  // Fallback jika event afterprint tidak terpicu pada browser tertentu.
+  inlinePrintCleanupTimer = setTimeout(() => {
+    window.removeEventListener("afterprint", onAfterPrint);
+    cleanup();
+  }, 2500);
+
+  try {
+    window.print();
+  } catch (_error) {
+    cleanup();
+    showToast("Browser gagal membuka dialog print.", true);
     return;
   }
-
-  const fullHtml = `
-    <!doctype html>
-    <html lang="id">
-      <head>
-        <meta charset="UTF-8">
-        <meta name="viewport" content="width=device-width, initial-scale=1.0">
-        <title>${safeText(ctx.title)}</title>
-        <style>${getPrintWindowStyles()}</style>
-      </head>
-      <body>
-        ${ctx.documentHtml}
-        <script>
-          window.onload = function () {
-            setTimeout(function () { window.print(); }, 150);
-          };
-        </script>
-      </body>
-    </html>
-  `;
-
-  popup.document.open();
-  popup.document.write(fullHtml);
-  popup.document.close();
 }
 
 function getCurrentPrintContext(showError) {

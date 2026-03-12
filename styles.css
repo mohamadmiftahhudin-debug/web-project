@@ -585,6 +585,52 @@ tbody tr {
   background: #fafdfc;
 }
 
+@media print {
+  body {
+    background: #fff !important;
+  }
+
+  body.inline-print-mode * {
+    visibility: hidden !important;
+  }
+
+  body.inline-print-mode #printPreview,
+  body.inline-print-mode #printPreview * {
+    visibility: visible !important;
+  }
+
+  body.inline-print-mode #printPreview {
+    position: fixed;
+    left: 0;
+    top: 0;
+    width: 100%;
+    height: auto;
+    overflow: visible;
+    margin: 0;
+    padding: 0;
+    border: 0;
+    border-radius: 0;
+    background: #fff;
+  }
+
+  body.inline-print-mode .print-sheet {
+    width: 190mm;
+    margin: 0 auto;
+    padding: 0;
+    border: 0;
+    border-radius: 0;
+    box-shadow: none;
+  }
+
+  body.inline-print-mode .print-note,
+  body.inline-print-mode .print-status-item,
+  body.inline-print-mode .print-meta td,
+  body.inline-print-mode .print-table th,
+  body.inline-print-mode .print-table td {
+    border-color: #394447;
+  }
+}
+
 @media (max-width: 900px) {
   .hero {
     flex-direction: column;
