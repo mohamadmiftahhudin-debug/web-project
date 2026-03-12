@@ -89,13 +89,14 @@ body {
 }
 
 .company-logo {
-  width: 62px;
-  height: 62px;
+  width: 74px;
+  height: 74px;
   object-fit: contain;
   border-radius: 10px;
   border: 1px solid #dfe8e6;
   background: #fff;
-  padding: 6px;
+  padding: 0;
+  display: block;
 }
 
 .eyebrow {
@@ -668,8 +669,8 @@ tbody tr {
   }
 
   .company-logo {
-    width: 52px;
-    height: 52px;
+    width: 62px;
+    height: 62px;
   }
 
   .header-right {
