@@ -12,15 +12,18 @@
 
   <div class="app">
     <header class="hero">
-      <div>
-        <p class="eyebrow">OPERASIONAL TRUCKING</p>
-        <h1>Sistem Management Trucking</h1>
-        <p class="subtitle">Uang Jalan - Operasional - Pertanggungjawaban</p>
+      <div class="hero-brand">
+        <img src="logo-main.png?v=1" alt="Logo Perusahaan" class="company-logo">
+        <div>
+          <p class="eyebrow">OPERASIONAL TRUCKING</p>
+          <h1>Sistem Management Trucking</h1>
+          <p class="subtitle">Uang Jalan - Operasional - Pertanggungjawaban</p>
+        </div>
       </div>
       <div class="header-right">
         <div class="chip" id="todayChip">-</div>
         <div class="chip chip-muted" id="clockChip">-</div>
-        <div class="chip chip-cloud" id="cloudStatusChip">Mode Lokal</div>
+        <div class="chip chip-cloud" id="cloudStatusChip">Cloud tim siap (belum login)</div>
         <div class="chip chip-role" id="teamRoleChip">Role: Lokal</div>
         <button class="ghost-btn small-btn" type="button" id="openAuthBtn">Login Cloud</button>
         <button class="ghost-btn small-btn hidden" type="button" id="syncNowBtn">Sync</button>
@@ -37,6 +40,7 @@
       <button class="tab-btn" data-tab="settlement">Verifikasi & Settlement</button>
       <button class="tab-btn" data-tab="reports">Laporan Bulanan</button>
       <button class="tab-btn" data-tab="print">Print Form</button>
+      <button class="tab-btn" data-tab="admin">Admin Tim</button>
       <button class="tab-btn" data-tab="routes">Master Rute</button>
     </nav>
 
@@ -488,6 +492,7 @@
             </label>
             <button type="submit" class="primary-btn">Tampilkan</button>
             <button type="button" id="exportReportCsvBtn" class="ghost-btn">Export CSV</button>
+            <button type="button" id="exportReportExcelBtn" class="ghost-btn">Export Excel</button>
           </form>
           <div class="kpi-grid compact">
             <article class="kpi-card">
@@ -618,6 +623,56 @@
                 </tr>
               </thead>
               <tbody id="routeTableBody"></tbody>
+            </table>
+          </div>
+        </div>
+      </section>
+
+      <section class="panel" id="tab-admin">
+        <div class="card">
+          <div class="card-head">
+            <h2>Informasi Tim</h2>
+          </div>
+          <div class="kpi-grid compact">
+            <article class="kpi-card">
+              <p>Team Code</p>
+              <h3 id="adminTeamCode">-</h3>
+            </article>
+            <article class="kpi-card">
+              <p>Nama Tim</p>
+              <h3 id="adminTeamName">-</h3>
+            </article>
+            <article class="kpi-card">
+              <p>Team ID</p>
+              <h3 id="adminTeamId">-</h3>
+            </article>
+            <article class="kpi-card">
+              <p>Total Anggota</p>
+              <h3 id="adminTeamTotalMembers">0</h3>
+            </article>
+          </div>
+          <div class="form-actions">
+            <button type="button" id="adminRefreshMembersBtn" class="ghost-btn">Refresh Anggota</button>
+          </div>
+          <p class="hint" id="adminTeamHint">Login cloud dan join tim untuk melihat anggota.</p>
+        </div>
+
+        <div class="card">
+          <div class="card-head">
+            <h2>Daftar Anggota Tim</h2>
+          </div>
+          <div class="table-wrap">
+            <table>
+              <thead>
+                <tr>
+                  <th>No</th>
+                  <th>User ID</th>
+                  <th>Role</th>
+                  <th>Tanggal Join</th>
+                  <th>Aksi</th>
+                </tr>
+              </thead>
+              <tbody id="teamMembersTableBody"></tbody>
             </table>
           </div>
         </div>

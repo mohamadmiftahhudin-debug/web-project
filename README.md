@@ -9,9 +9,16 @@ Aplikasi web sederhana untuk mengelola:
 - Laporan bulanan dan bonus efisiensi
 - Print form resmi siap tanda tangan
 
+Catatan versi saat ini:
+- Login menggunakan Cloud Supabase (multi-user).
+- Data sinkron antar perangkat berdasarkan `Team Code` yang sama.
+
 ## Cara Menjalankan
 1. Buka file `index.html` di browser (Chrome/Edge/Firefox).
 2. Data tersimpan otomatis di `localStorage` browser.
+3. Login cloud:
+- Daftarkan akun user dari tombol `Daftar`.
+- Login, isi `Team Code`, lalu `Join Tim`.
 
 ## Akses dari Rumah/Kantor (Cloud)
 Gunakan arsitektur cepat: `Supabase + Vercel + Domain`.
@@ -20,6 +27,7 @@ Gunakan arsitektur cepat: `Supabase + Vercel + Domain`.
 - Buat project baru di Supabase.
 - Buka SQL Editor, jalankan file `supabase/schema.sql`.
 - Aktifkan login Email/Password di `Authentication > Providers`.
+- Jika sebelumnya sudah pernah menjalankan SQL lama, jalankan ulang `supabase/schema.sql` agar policy multi-user join tim ikut ter-update.
 
 2. Isi konfigurasi aplikasi
 - Edit file `config.js`:
@@ -48,6 +56,7 @@ Gunakan arsitektur cepat: `Supabase + Vercel + Domain`.
 ## Role Multi-User Tim
 - `Admin`:
   - akses penuh semua modul.
+  - akses menu `Admin Tim` untuk lihat daftar anggota dan ubah role Operasional/Finance/Admin.
 - `Operasional`:
   - buat JO, pengajuan uang jalan, approval operasional, input LPJ, kelola master rute.
 - `Finance`:
@@ -101,6 +110,7 @@ Gunakan arsitektur cepat: `Supabase + Vercel + Domain`.
   - efisiensi
   - bonus
 - Export CSV.
+- Export Excel (`.xls`).
 
 8. `Print Form`:
 - Cetak `Job Order (JO)`.
@@ -113,6 +123,7 @@ Gunakan arsitektur cepat: `Supabase + Vercel + Domain`.
 - Secara default aplikasi berjalan frontend-only (data lokal browser).
 - Jika `CLOUD_MODE=true`, data disimpan ke Supabase dan bisa diakses lintas perangkat.
 - Jika `SHARED_TEAM_MODE=true`, data disimpan di `team_state` dan dibagi per tim.
+- Jalankan ulang `supabase/schema.sql` setiap kali ada update policy RLS (termasuk policy admin ubah role anggota tim).
 - Implementasi saat ini membaca 1 membership tim aktif per user (tim pertama yang ditemukan).
-- Jika popup print diblokir browser, izinkan popup untuk domain/file lokal ini.
+- Fitur print terbaru menggunakan `window.print()` langsung dari halaman (tanpa popup window).
 - Sinkronisasi cloud saat ini memakai strategi `last write wins` (versi paling akhir akan menggantikan data sebelumnya).

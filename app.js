@@ -1,4 +1,6 @@
 const STORAGE_KEY = "trucking_management_v1";
+const USERS_STORAGE_KEY = "trucking_users_v1_unused";
+const SESSION_STORAGE_KEY = "trucking_session_v1_unused";
 const ONE_DAY_MS = 24 * 60 * 60 * 1000;
 
 const defaultState = {
@@ -29,7 +31,11 @@ let cloudReady = false;
 let appConfig = null;
 let currentTeam = null;
 let currentRole = "local";
+let currentTeamMembers = [];
+let teamMembersLoading = false;
 let inlinePrintCleanupTimer = null;
+let localUsers = [];
+let currentLocalUser = null;
 
 const els = {};
 
@@ -140,11 +146,19 @@ function bindElements() {
     "reportFilterForm",
     "reportMonth",
     "exportReportCsvBtn",
+    "exportReportExcelBtn",
     "reportTotalJobs",
     "reportTotalCost",
     "reportTotalAdvance",
     "reportTotalBonus",
     "reportTableBody",
+    "adminTeamCode",
+    "adminTeamName",
+    "adminTeamId",
+    "adminTeamTotalMembers",
+    "adminRefreshMembersBtn",
+    "adminTeamHint",
+    "teamMembersTableBody",
     "printForm",
     "printCompanyName",
     "printDate",
@@ -240,6 +254,7 @@ function bindForms() {
 
   els.reportFilterForm.addEventListener("submit", onReportFilterSubmit);
   els.exportReportCsvBtn.addEventListener("click", exportReportCsv);
+  els.exportReportExcelBtn.addEventListener("click", exportReportExcel);
 
   els.printDocType.addEventListener("change", renderPrintRecordOptions);
   els.printRecordId.addEventListener("change", renderPrintPreview);
@@ -256,6 +271,8 @@ function bindForms() {
   els.joinTeamBtn.addEventListener("click", onJoinTeamClick);
   els.logoutBtn.addEventListener("click", onLogoutClick);
   els.syncNowBtn.addEventListener("click", onSyncNowClick);
+  els.adminRefreshMembersBtn.addEventListener("click", onRefreshTeamMembersClick);
+  els.teamMembersTableBody.addEventListener("click", onTeamMembersActionClick);
 
   els.routeForm.addEventListener("submit", submitRouteStandard);
 }
@@ -273,51 +290,32 @@ function setDefaultDates() {
   els.printDate.value = today;
 }
 
-async function initCloudMode() {
+function initLocalAuth() {
   appConfig = getAppConfig();
-  setCloudStatus("Mode Lokal");
-  setRoleChip("Role: Lokal");
-  updateAuthUi();
+  cloudReady = false;
+  cloudUser = null;
+  currentTeam = null;
+  setCloudStatus("Sistem Login Lokal");
+  els.authHint.textContent = "Login menggunakan username dan password user yang sudah dibuat Admin. Default awal: admin / admin123.";
 
-  if (!appConfig.CLOUD_MODE) {
-    els.authHint.textContent = "Cloud mode nonaktif. Isi config.js lalu aktifkan CLOUD_MODE=true.";
-    return;
-  }
-
-  if (!appConfig.SUPABASE_URL || !appConfig.SUPABASE_ANON_KEY) {
-    els.authHint.textContent = "Supabase belum dikonfigurasi. Isi SUPABASE_URL dan SUPABASE_ANON_KEY pada config.js.";
-    return;
-  }
-
-  if (!window.supabase || !window.supabase.createClient) {
-    els.authHint.textContent = "Library Supabase gagal dimuat. Cek koneksi internet/CDN.";
-    return;
-  }
-
-  try {
-    supabaseClient = window.supabase.createClient(appConfig.SUPABASE_URL, appConfig.SUPABASE_ANON_KEY);
-    cloudReady = true;
-    setCloudStatus(appConfig.SHARED_TEAM_MODE ? "Cloud tim siap" : "Cloud siap");
-    els.authHint.textContent = appConfig.SHARED_TEAM_MODE
-      ? "Login akun cloud, lalu join tim agar data dipakai bersama."
-      : "Login cloud agar data sinkron lintas perangkat.";
-
-    const { data, error } = await supabaseClient.auth.getSession();
-    if (error) {
-      setCloudStatus("Cloud error");
-      showToast("Gagal membaca sesi cloud.", true);
-      return;
+  const session = loadLocalSession();
+  if (session?.userId) {
+    const user = localUsers.find((item) => item.id === session.userId);
+    if (user) {
+      setActiveLocalUser(user, false);
+    } else {
+      clearLocalSession();
+      setActiveLocalUser(null, false);
     }
-
-    supabaseClient.auth.onAuthStateChange(async (_event, session) => {
-      await onSessionUserChanged(session?.user || null, true);
-    });
-
-    await onSessionUserChanged(data?.session?.user || null, true);
-  } catch (_error) {
-    setCloudStatus("Cloud error");
-    showToast("Inisialisasi cloud gagal.", true);
+  } else {
+    setActiveLocalUser(null, false);
   }
+  refreshTeamMembers(true);
+  updateAuthUi();
+}
+
+async function initCloudMode() {
+  initLocalAuth();
 }
 
 function getAppConfig() {
@@ -325,8 +323,8 @@ function getAppConfig() {
   return {
     SUPABASE_URL: String(config.SUPABASE_URL || "").trim(),
     SUPABASE_ANON_KEY: String(config.SUPABASE_ANON_KEY || "").trim(),
-    CLOUD_MODE: Boolean(config.CLOUD_MODE),
-    SHARED_TEAM_MODE: config.SHARED_TEAM_MODE !== false
+    CLOUD_MODE: false,
+    SHARED_TEAM_MODE: false
   };
 }
 
@@ -343,7 +341,7 @@ function roleLabel(role) {
   if (role === "finance") return "Finance";
   if (role === "operasional") return "Operasional";
   if (role === "guest") return "Guest";
-  return "Lokal";
+  return "Guest";
 }
 
 function normalizeRole(role) {
@@ -354,147 +352,134 @@ function normalizeRole(role) {
   return "guest";
 }
 
-function normalizeTeamCode(value) {
+function normalizeUsername(value) {
   return String(value || "")
-    .toUpperCase()
-    .replace(/[^A-Z0-9-]/g, "")
-    .slice(0, 24);
+    .toLowerCase()
+    .replace(/[^a-z0-9._-]/g, "")
+    .slice(0, 32);
 }
 
 function canCloudSync() {
-  if (!cloudReady || !cloudUser) {
-    return false;
-  }
-  if (appConfig?.SHARED_TEAM_MODE) {
-    return Boolean(currentTeam?.id);
-  }
-  return true;
+  return false;
 }
 
 function getCloudStateSource() {
-  if (!cloudUser) return null;
-  if (appConfig?.SHARED_TEAM_MODE) {
-    if (!currentTeam?.id) return null;
-    return {
-      table: "team_state",
-      key: "team_id",
-      value: currentTeam.id,
-      conflict: "team_id",
-      payload: { team_id: currentTeam.id }
-    };
+  return null;
+}
+
+function loadLocalUsers() {
+  const raw = localStorage.getItem(USERS_STORAGE_KEY);
+  if (!raw) {
+    const seeded = [
+      {
+        id: "USR-0001",
+        name: "Administrator",
+        username: "admin",
+        password: "admin123",
+        role: "admin",
+        created_at: new Date().toISOString()
+      }
+    ];
+    localStorage.setItem(USERS_STORAGE_KEY, JSON.stringify(seeded));
+    return seeded;
   }
-  return {
-    table: "app_state",
-    key: "user_id",
-    value: cloudUser.id,
-    conflict: "user_id",
-    payload: { user_id: cloudUser.id }
-  };
+  try {
+    const parsed = JSON.parse(raw);
+    if (!Array.isArray(parsed) || parsed.length === 0) {
+      localStorage.removeItem(USERS_STORAGE_KEY);
+      return loadLocalUsers();
+    }
+    const cleaned = parsed
+      .map((item, index) => ({
+        id: String(item.id || `USR-${String(index + 1).padStart(4, "0")}`),
+        name: String(item.name || item.username || `User ${index + 1}`).trim(),
+        username: normalizeUsername(item.username),
+        password: String(item.password || ""),
+        role: normalizeRole(item.role),
+        created_at: item.created_at || new Date().toISOString()
+      }))
+      .filter((item) => item.username && item.password && item.role !== "guest");
+    if (cleaned.length === 0) {
+      localStorage.removeItem(USERS_STORAGE_KEY);
+      return loadLocalUsers();
+    }
+    return cleaned;
+  } catch {
+    localStorage.removeItem(USERS_STORAGE_KEY);
+    return loadLocalUsers();
+  }
+}
+
+function saveLocalUsers() {
+  localStorage.setItem(USERS_STORAGE_KEY, JSON.stringify(localUsers));
+}
+
+function loadLocalSession() {
+  const raw = localStorage.getItem(SESSION_STORAGE_KEY);
+  if (!raw) return null;
+  try {
+    return JSON.parse(raw);
+  } catch {
+    localStorage.removeItem(SESSION_STORAGE_KEY);
+    return null;
+  }
+}
+
+function saveLocalSession(user) {
+  if (!user) return;
+  localStorage.setItem(SESSION_STORAGE_KEY, JSON.stringify({
+    userId: user.id,
+    username: user.username
+  }));
+}
+
+function clearLocalSession() {
+  localStorage.removeItem(SESSION_STORAGE_KEY);
+}
+
+function makeLocalUserId() {
+  let max = 0;
+  localUsers.forEach((item) => {
+    const numeric = Number(String(item.id || "").replace("USR-", ""));
+    if (Number.isFinite(numeric) && numeric > max) {
+      max = numeric;
+    }
+  });
+  return `USR-${String(max + 1).padStart(4, "0")}`;
+}
+
+function setActiveLocalUser(user, writeSession = true) {
+  currentLocalUser = user ? { ...user } : null;
+  currentRole = currentLocalUser ? normalizeRole(currentLocalUser.role) : "guest";
+  cloudUser = currentLocalUser ? { id: currentLocalUser.id, email: currentLocalUser.username } : null;
+  currentTeam = null;
+  if (writeSession) {
+    if (currentLocalUser) {
+      saveLocalSession(currentLocalUser);
+    } else {
+      clearLocalSession();
+    }
+  }
 }
 
 function updateAuthUi() {
-  if (!cloudReady) {
-    els.openAuthBtn.classList.remove("hidden");
-    els.openAuthBtn.textContent = "Login Cloud";
-    els.syncNowBtn.classList.add("hidden");
-    els.logoutBtn.classList.add("hidden");
-    setRoleChip("Role: Lokal");
-    return;
-  }
-
-  if (cloudUser) {
-    const email = cloudUser.email || "user";
-    const teamLabel = currentTeam ? ` | Tim ${currentTeam.code || currentTeam.name || "-"}` : "";
-    setCloudStatus(`Cloud: ${email}${teamLabel}`);
+  if (currentLocalUser) {
+    setCloudStatus(`Login: ${currentLocalUser.username}`);
     setRoleChip(`Role: ${roleLabel(currentRole)}`);
     els.openAuthBtn.classList.add("hidden");
-    els.syncNowBtn.classList.remove("hidden");
     els.logoutBtn.classList.remove("hidden");
   } else {
-    setCloudStatus(appConfig?.SHARED_TEAM_MODE ? "Cloud tim siap (belum login)" : "Cloud siap (belum login)");
-    setRoleChip("Role: Lokal");
+    setCloudStatus("Belum login");
+    setRoleChip("Role: Guest");
     els.openAuthBtn.classList.remove("hidden");
-    els.openAuthBtn.textContent = "Login Cloud";
-    els.syncNowBtn.classList.add("hidden");
+    els.openAuthBtn.textContent = "Login";
     els.logoutBtn.classList.add("hidden");
   }
+  els.syncNowBtn.classList.add("hidden");
   applyRolePermissions();
-}
-
-async function onSessionUserChanged(user, silent = false) {
-  cloudUser = user || null;
-  currentTeam = null;
-  currentRole = cloudUser ? "guest" : "local";
-
-  if (!cloudUser) {
-    updateAuthUi();
-    applyRolePermissions();
-    return;
-  }
-
-  await refreshTeamContext(silent);
-  updateAuthUi();
-
-  if (canCloudSync()) {
-    await pullCloudState(true);
-  } else if (appConfig?.SHARED_TEAM_MODE) {
-    setCloudStatus("Belum join tim");
-    if (!silent) {
-      showToast("Akun ini belum tergabung tim. Isi Team Code lalu klik Join Tim.", true);
-      openAuthModal();
-    }
-  }
-
-  applyRolePermissions();
-}
-
-async function refreshTeamContext(silent = false) {
-  if (!cloudReady || !cloudUser) return;
-  if (!appConfig?.SHARED_TEAM_MODE) {
-    currentRole = "admin";
-    currentTeam = {
-      id: cloudUser.id,
-      code: "PERSONAL",
-      name: "Personal"
-    };
-    return;
-  }
-
-  const { data, error } = await supabaseClient
-    .from("team_members")
-    .select("team_id, role, teams!inner(id, code, name)")
-    .eq("user_id", cloudUser.id)
-    .limit(1)
-    .maybeSingle();
-
-  if (error) {
-    if (!silent) {
-      showToast(`Gagal membaca tim: ${error.message}`, true);
-    }
-    currentTeam = null;
-    currentRole = "guest";
-    return;
-  }
-
-  if (!data) {
-    currentTeam = null;
-    currentRole = "guest";
-    return;
-  }
-
-  currentTeam = {
-    id: data.team_id,
-    code: data.teams?.code || "",
-    name: data.teams?.name || ""
-  };
-  currentRole = normalizeRole(data.role);
 }
 
 function openAuthModal() {
-  if (!cloudReady) {
-    showToast("Cloud belum aktif. Cek config.js.", true);
-    return;
-  }
   els.authModal.classList.remove("hidden");
 }
 
@@ -510,217 +495,41 @@ function onAuthBackdropClick(event) {
 
 async function onLoginSubmit(event) {
   event.preventDefault();
-  if (!cloudReady) return;
+  const username = normalizeUsername(els.authUsername.value);
+  const password = String(els.authPassword.value || "");
 
-  const email = els.authEmail.value.trim();
-  const password = els.authPassword.value;
-  if (!email || !password) {
-    showToast("Email dan password wajib diisi.", true);
+  if (!username || !password) {
+    showToast("Username dan password wajib diisi.", true);
     return;
   }
 
-  const { data, error } = await supabaseClient.auth.signInWithPassword({ email, password });
-  if (error) {
-    showToast(`Login gagal: ${error.message}`, true);
+  const user = localUsers.find((item) => item.username === username && item.password === password);
+  if (!user) {
+    showToast("Login gagal: username atau password salah.", true);
     return;
   }
 
-  cloudUser = data?.user || cloudUser;
-  await refreshTeamContext(true);
-  if (appConfig?.SHARED_TEAM_MODE && !currentTeam?.id) {
-    await tryJoinTeamFromForm(true);
-  }
-  await onSessionUserChanged(cloudUser, true);
-
-  if (appConfig?.SHARED_TEAM_MODE && !currentTeam?.id) {
-    showToast("Login berhasil. Isi Team Code lalu klik Join Tim.");
-    return;
-  }
-
-  showToast("Login cloud berhasil.");
-  if (!appConfig?.SHARED_TEAM_MODE || currentTeam?.id) {
-    closeAuthModal();
-    els.authForm.reset();
-  }
-}
-
-async function onRegisterClick() {
-  if (!cloudReady) return;
-  const email = els.authEmail.value.trim();
-  const password = els.authPassword.value;
-  if (!email || !password) {
-    showToast("Isi email dan password untuk daftar akun.", true);
-    return;
-  }
-
-  const { data, error } = await supabaseClient.auth.signUp({ email, password });
-  if (error) {
-    showToast(`Registrasi gagal: ${error.message}`, true);
-    return;
-  }
-
-  if (data?.user && data?.session) {
-    cloudUser = data.user;
-    await tryJoinTeamFromForm(false);
-    await onSessionUserChanged(cloudUser, true);
-  }
-
-  showToast("Akun dibuat. Jika diminta, cek email verifikasi lalu login.");
-}
-
-async function onJoinTeamClick() {
-  if (!cloudReady || !cloudUser) {
-    showToast("Login cloud terlebih dahulu.", true);
-    return;
-  }
-  if (!appConfig?.SHARED_TEAM_MODE) {
-    showToast("Mode tim tidak aktif di konfigurasi.", true);
-    return;
-  }
-  await tryJoinTeamFromForm(false);
-}
-
-async function tryJoinTeamFromForm(silent = false) {
-  const teamCode = normalizeTeamCode(els.authTeamCode.value);
-  const teamName = String(els.authTeamName.value || "").trim();
-  const desiredRole = normalizeRole(els.authRole.value);
-
-  if (!teamCode) {
-    if (!silent) {
-      showToast("Isi Team Code untuk join tim.", true);
-    }
-    return false;
-  }
-
-  const joined = await ensureTeamMembership(teamCode, teamName, desiredRole, silent);
-  if (!joined) {
-    return false;
-  }
-
-  await refreshTeamContext(true);
+  setActiveLocalUser(user, true);
   updateAuthUi();
-  await pullCloudState(true);
-  showToast(`Berhasil tergabung tim ${teamCode}. Role Anda: ${roleLabel(currentRole)}.`);
+  await refreshTeamMembers(true);
+  renderTeamAdminPanel();
   closeAuthModal();
-  return true;
-}
-
-async function ensureTeamMembership(teamCode, teamName, desiredRole, silent = false) {
-  if (!cloudReady || !cloudUser) return false;
-
-  const normalizedCode = normalizeTeamCode(teamCode);
-  const normalizedRole = normalizeRole(desiredRole);
-  if (!normalizedCode) return false;
-
-  let team = null;
-  let createdNewTeam = false;
-
-  const found = await supabaseClient
-    .from("teams")
-    .select("id, code, name")
-    .eq("code", normalizedCode)
-    .maybeSingle();
-
-  if (found.error) {
-    if (!silent) {
-      showToast(`Gagal mencari tim: ${found.error.message}`, true);
-    }
-    return false;
-  }
-
-  if (found.data) {
-    team = found.data;
-  } else {
-    const payload = {
-      code: normalizedCode,
-      name: teamName || `Team ${normalizedCode}`,
-      created_by: cloudUser.id
-    };
-    const created = await supabaseClient
-      .from("teams")
-      .insert(payload)
-      .select("id, code, name")
-      .single();
-
-    if (created.error) {
-      if (!silent) {
-        showToast(`Gagal membuat tim: ${created.error.message}`, true);
-      }
-      return false;
-    }
-    team = created.data;
-    createdNewTeam = true;
-  }
-
-  const existingMember = await supabaseClient
-    .from("team_members")
-    .select("id, role")
-    .eq("team_id", team.id)
-    .eq("user_id", cloudUser.id)
-    .maybeSingle();
-
-  if (existingMember.error) {
-    if (!silent) {
-      showToast(`Gagal membaca membership tim: ${existingMember.error.message}`, true);
-    }
-    return false;
-  }
-
-  let memberRole = createdNewTeam ? "admin" : (normalizedRole === "admin" ? "operasional" : normalizedRole);
-  if (existingMember.data) {
-    memberRole = normalizeRole(existingMember.data.role);
-  } else {
-    const insertMember = await supabaseClient
-      .from("team_members")
-      .insert({
-        team_id: team.id,
-        user_id: cloudUser.id,
-        role: memberRole
-      });
-
-    if (insertMember.error) {
-      if (!silent) {
-        showToast(`Gagal join tim: ${insertMember.error.message}`, true);
-      }
-      return false;
-    }
-  }
-
-  if (!memberRole || memberRole === "guest") {
-    if (!silent) {
-      showToast("Role tim tidak valid.", true);
-    }
-    return false;
-  }
-
-  currentTeam = {
-    id: team.id,
-    code: team.code,
-    name: team.name
-  };
-  currentRole = memberRole;
-  return true;
+  els.authForm.reset();
+  showToast(`Login berhasil sebagai ${user.username}.`);
 }
 
 async function onLogoutClick() {
-  if (!cloudReady || !cloudUser) return;
-  const { error } = await supabaseClient.auth.signOut();
-  if (error) {
-    showToast(`Logout gagal: ${error.message}`, true);
-    return;
-  }
-  currentTeam = null;
-  currentRole = "local";
+  if (!currentLocalUser) return;
+  setActiveLocalUser(null, true);
+  currentTeamMembers = [];
+  teamMembersLoading = false;
   updateAuthUi();
+  renderTeamAdminPanel();
   showToast("Logout berhasil.");
 }
 
 async function onSyncNowClick() {
-  if (!canCloudSync()) {
-    showToast("Login cloud dan pastikan sudah join tim.", true);
-    return;
-  }
-  await pushStateToCloud("manual");
+  showToast("Mode cloud nonaktif. Aplikasi berjalan dengan login lokal.", true);
 }
 
 async function pullCloudState(silent = false) {
@@ -816,11 +625,210 @@ async function pushStateToCloud(mode = "auto") {
   }
 }
 
-function hasPermission(permission) {
-  if (!cloudUser || !appConfig?.SHARED_TEAM_MODE) {
-    return true;
+async function onRefreshTeamMembersClick() {
+  if (!guardPermission("team_member_manage", "Hanya Admin yang bisa melihat dan mengelola anggota tim.")) {
+    return;
   }
+  await refreshTeamMembers(false);
+}
+
+async function refreshTeamMembers(silent = false) {
+  teamMembersLoading = true;
+  renderTeamAdminPanel();
+  const prepared = [...localUsers]
+    .sort((a, b) => {
+      const aTime = new Date(a.created_at).getTime();
+      const bTime = new Date(b.created_at).getTime();
+      return aTime - bTime;
+    })
+    .map((item) => ({
+      id: item.id,
+      user_id: item.username,
+      name: item.name,
+      role: normalizeRole(item.role),
+      created_at: item.created_at
+    }));
+  teamMembersLoading = false;
+  currentTeamMembers = prepared;
+  if (!silent) {
+    showToast("Data user berhasil diperbarui.");
+  }
+  renderTeamAdminPanel();
+}
+
+function renderTeamAdminPanel() {
+  els.adminTeamCode.textContent = "LOCAL";
+  els.adminTeamName.textContent = "Sistem Login Lokal";
+  els.adminTeamId.textContent = safeText(window.location.host || "Perangkat Lokal");
+  els.adminTeamTotalMembers.textContent = String(currentTeamMembers.length || 0);
+
+  if (!currentLocalUser) {
+    els.adminTeamHint.textContent = "Belum login. Silakan login dulu.";
+    els.teamMembersTableBody.innerHTML = emptyRow("Belum login.");
+    return;
+  }
+
+  if (!hasPermission("team_member_manage")) {
+    els.adminTeamHint.textContent = `Role Anda ${roleLabel(currentRole)}. Hanya Admin yang bisa mengelola user.`;
+  } else {
+    els.adminTeamHint.textContent = "Admin dapat menambah user baru dan mengubah role user dari tabel di bawah.";
+  }
+
+  if (teamMembersLoading) {
+    els.teamMembersTableBody.innerHTML = emptyRow("Memuat data user...");
+    return;
+  }
+
+  if (currentTeamMembers.length === 0) {
+    els.teamMembersTableBody.innerHTML = emptyRow("Belum ada user.");
+    return;
+  }
+
+  const rows = currentTeamMembers.map((member, index) => {
+    const isSelf = member.id === currentLocalUser?.id;
+    const joinedAt = formatDate(member.created_at);
+    const roleOptions = ["admin", "operasional", "finance"]
+      .map((role) => `<option value="${role}"${role === member.role ? " selected" : ""}>${roleLabel(role)}</option>`)
+      .join("");
+
+    const roleSelectId = `member-role-${member.id}`;
+    const canManage = hasPermission("team_member_manage");
+    const actionDisabled = !canManage ? " disabled" : "";
+    const selectDisabled = !canManage ? " disabled" : "";
+    const selfBadge = isSelf ? " <strong>(Anda)</strong>" : "";
+    const userLabel = `${safeText(member.user_id)}${member.name ? ` - ${safeText(member.name)}` : ""}`;
+
+    return `
+      <tr>
+        <td>${index + 1}</td>
+        <td>${userLabel}${selfBadge}</td>
+        <td>
+          <select id="${roleSelectId}"${selectDisabled}>
+            ${roleOptions}
+          </select>
+        </td>
+        <td>${safeText(joinedAt)}</td>
+        <td>
+          <div class="row-actions">
+            <button type="button" data-action="save-member-role" data-id="${safeText(member.id)}"${actionDisabled}>Simpan Role</button>
+          </div>
+        </td>
+      </tr>
+    `;
+  });
+  els.teamMembersTableBody.innerHTML = rows.join("");
+}
+
+async function onTeamMembersActionClick(event) {
+  const button = event.target.closest("button");
+  if (!button) return;
+
+  const action = button.dataset.action;
+  const memberId = button.dataset.id;
+  if (action !== "save-member-role" || !memberId) return;
+
+  if (!guardPermission("team_member_manage", "Hanya Admin yang bisa mengubah role anggota.")) {
+    return;
+  }
+
+  const member = currentTeamMembers.find((item) => item.id === memberId);
+  if (!member) {
+    showToast("Data anggota tidak ditemukan.", true);
+    return;
+  }
+
+  const selectEl = document.getElementById(`member-role-${memberId}`);
+  if (!selectEl) {
+    showToast("Input role tidak ditemukan.", true);
+    return;
+  }
+  const nextRole = normalizeRole(selectEl.value);
+  if (nextRole === "guest") {
+    showToast("Role tidak valid.", true);
+    return;
+  }
+  if (nextRole === member.role) {
+    showToast("Role tidak berubah.");
+    return;
+  }
+
+  const isSelf = member.id === currentLocalUser?.id;
+  const adminCount = currentTeamMembers.filter((item) => item.role === "admin").length;
+  if (member.role === "admin" && nextRole !== "admin" && adminCount <= 1) {
+    showToast("Tidak bisa mengubah admin terakhir. Tambah admin lain dulu.", true);
+    selectEl.value = member.role;
+    return;
+  }
+  if (isSelf && member.role === "admin" && nextRole !== "admin") {
+    showToast("Untuk keamanan, Anda tidak bisa menurunkan role diri sendiri dari halaman ini.", true);
+    selectEl.value = member.role;
+    return;
+  }
+
+  const userIndex = localUsers.findIndex((item) => item.id === member.id);
+  if (userIndex === -1) {
+    showToast("User tidak ditemukan.", true);
+    selectEl.value = member.role;
+    return;
+  }
+  localUsers[userIndex].role = nextRole;
+  saveLocalUsers();
+
+  if (isSelf) {
+    setActiveLocalUser(localUsers[userIndex], true);
+    updateAuthUi();
+  }
+
+  showToast("Role user berhasil diperbarui.");
+  await refreshTeamMembers(true);
+  applyRolePermissions();
+}
+
+async function onCreateLocalUserSubmit(event) {
+  event.preventDefault();
+  if (!guardPermission("team_member_manage", "Hanya Admin yang bisa menambah user.")) {
+    return;
+  }
+
+  const name = String(els.adminUserName.value || "").trim();
+  const username = normalizeUsername(els.adminUserUsername.value);
+  const password = String(els.adminUserPassword.value || "");
+  const role = normalizeRole(els.adminUserRole.value);
+
+  if (!name || !username || !password) {
+    showToast("Nama, username, dan password wajib diisi.", true);
+    return;
+  }
+  if (password.length < 6) {
+    showToast("Password minimal 6 karakter.", true);
+    return;
+  }
+  if (role === "guest") {
+    showToast("Role tidak valid.", true);
+    return;
+  }
+  if (localUsers.some((item) => item.username === username)) {
+    showToast("Username sudah dipakai. Gunakan username lain.", true);
+    return;
+  }
+
+  localUsers.push({
+    id: makeLocalUserId(),
+    name,
+    username,
+    password,
+    role,
+    created_at: new Date().toISOString()
+  });
+  saveLocalUsers();
+  els.adminUserForm.reset();
+  await refreshTeamMembers(true);
+  showToast(`User ${username} berhasil ditambahkan.`);
+}
+
+function hasPermission(permission) {
   const role = normalizeRole(currentRole);
+  if (role === "guest") return false;
   if (role === "admin") return true;
 
   const matrix = {
@@ -832,7 +840,8 @@ function hasPermission(permission) {
     lpj_submit: ["operasional"],
     lpj_verify: ["finance"],
     settlement_manage: ["finance"],
-    route_manage: ["operasional"]
+    route_manage: ["operasional"],
+    team_member_manage: ["admin"]
   };
   const allowed = matrix[permission] || ["operasional", "finance"];
   return allowed.includes(role);
@@ -854,7 +863,9 @@ function applyRolePermissions() {
     { selector: "#disbursementForm button[type='submit']", permission: "disbursement_manage" },
     { selector: "#lpjForm button[type='submit']", permission: "lpj_submit" },
     { selector: "#settlementForm button[type='submit']", permission: "settlement_manage" },
-    { selector: "#routeForm button[type='submit']", permission: "route_manage" }
+    { selector: "#routeForm button[type='submit']", permission: "route_manage" },
+    { selector: "#adminRefreshMembersBtn", permission: "team_member_manage" },
+    { selector: "#adminUserForm button[type='submit']", permission: "team_member_manage" }
   ];
 
   controls.forEach((item) => {
@@ -864,6 +875,19 @@ function applyRolePermissions() {
     el.disabled = !allowed;
     el.title = allowed ? "" : "Role Anda tidak memiliki akses untuk aksi ini.";
   });
+
+  const adminTabBtn = document.querySelector(".tab-btn[data-tab='admin']");
+  if (adminTabBtn) {
+    const allowOpen = hasPermission("team_member_manage");
+    adminTabBtn.disabled = !allowOpen;
+    adminTabBtn.title = allowOpen ? "" : "Hanya Admin yang dapat membuka menu Admin User.";
+    if (!allowOpen && adminTabBtn.classList.contains("active")) {
+      const dashboardBtn = document.querySelector(".tab-btn[data-tab='dashboard']");
+      if (dashboardBtn) {
+        dashboardBtn.click();
+      }
+    }
+  }
 }
 
 function seedInitialData() {
@@ -918,6 +942,7 @@ function renderAll() {
   renderDashboard();
   renderReport();
   renderPrintRecordOptions();
+  renderTeamAdminPanel();
   applyRolePermissions();
 }
 
@@ -2010,9 +2035,123 @@ function exportReportCsv() {
   showToast("Laporan CSV berhasil diunduh.");
 }
 
+function exportReportExcel() {
+  if (currentReportRows.length === 0) {
+    showToast("Tidak ada data laporan untuk di-export.", true);
+    return;
+  }
+
+  const monthValue = els.reportMonth.value || new Date().toISOString().slice(0, 7);
+  const monthLabel = formatMonthLabel(monthValue);
+  const generatedAt = formatDateTime(new Date().toISOString());
+
+  const totalJobs = currentReportRows.reduce((sum, row) => sum + (Number(row.totalJobs) || 0), 0);
+  const totalCost = currentReportRows.reduce((sum, row) => sum + (Number(row.totalCost) || 0), 0);
+  const totalAdvance = currentReportRows.reduce((sum, row) => sum + (Number(row.totalAdvance) || 0), 0);
+  const totalBonus = currentReportRows.reduce((sum, row) => sum + (Number(row.totalBonus) || 0), 0);
+
+  const sortedRows = [...currentReportRows].sort((a, b) => b.totalJobs - a.totalJobs);
+  const detailRows = sortedRows.map((row, index) => `
+    <tr>
+      <td>${index + 1}</td>
+      <td>${safeText(row.truck)}</td>
+      <td>${safeText(row.driver)}</td>
+      <td>${row.totalJobs}</td>
+      <td>${formatNumberId(row.totalCost)}</td>
+      <td>${formatNumberId(row.totalAdvance)}</td>
+      <td>${formatNumberId(row.solarPerKm)}</td>
+      <td>${formatNumberId(row.costPerKm)}</td>
+      <td>${row.efficiency.toFixed(2)}%</td>
+      <td>${formatNumberId(row.totalBonus)}</td>
+    </tr>
+  `).join("");
+
+  const html = `
+    <html xmlns:o="urn:schemas-microsoft-com:office:office"
+          xmlns:x="urn:schemas-microsoft-com:office:excel"
+          xmlns="http://www.w3.org/TR/REC-html40">
+      <head>
+        <meta charset="UTF-8">
+        <title>Laporan Bulanan Trucking</title>
+        <style>
+          table { border-collapse: collapse; width: 100%; }
+          th, td { border: 1px solid #333; padding: 6px 8px; font-size: 12px; }
+          th { background: #dfecea; text-align: left; }
+          .title { font-size: 16px; font-weight: 700; border: none; }
+          .meta { border: none; }
+          .sum th, .sum td { background: #f2f6f6; font-weight: 700; }
+        </style>
+      </head>
+      <body>
+        <table>
+          <tr><td class="title" colspan="10">Laporan Bulanan Trucking</td></tr>
+          <tr><td class="meta" colspan="10">Periode: ${safeText(monthLabel)}</td></tr>
+          <tr><td class="meta" colspan="10">Tanggal Export: ${safeText(generatedAt)}</td></tr>
+          <tr><td class="meta" colspan="10">&nbsp;</td></tr>
+
+          <tr class="sum">
+            <th colspan="2">Total Job</th><td colspan="3">${totalJobs}</td>
+            <th colspan="2">Total Biaya</th><td colspan="3">${formatNumberId(totalCost)}</td>
+          </tr>
+          <tr class="sum">
+            <th colspan="2">Total Uang Jalan</th><td colspan="3">${formatNumberId(totalAdvance)}</td>
+            <th colspan="2">Total Bonus Efisiensi</th><td colspan="3">${formatNumberId(totalBonus)}</td>
+          </tr>
+          <tr><td class="meta" colspan="10">&nbsp;</td></tr>
+
+          <tr>
+            <th>No</th>
+            <th>Truck</th>
+            <th>Driver</th>
+            <th>Total Job</th>
+            <th>Total Biaya</th>
+            <th>Total Uang Jalan</th>
+            <th>Solar / KM</th>
+            <th>Biaya / KM</th>
+            <th>Efisiensi</th>
+            <th>Bonus</th>
+          </tr>
+          ${detailRows}
+        </table>
+      </body>
+    </html>
+  `;
+
+  const blob = new Blob(["\uFEFF", html], { type: "application/vnd.ms-excel;charset=utf-8;" });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement("a");
+  a.href = url;
+  a.download = `laporan-trucking-${monthValue}.xls`;
+  document.body.appendChild(a);
+  a.click();
+  a.remove();
+  URL.revokeObjectURL(url);
+  showToast("Laporan Excel berhasil diunduh.");
+}
+
 function csvCell(value) {
   const text = String(value ?? "");
   return `"${text.replaceAll("\"", "\"\"")}"`;
+}
+
+function formatNumberId(value) {
+  const num = Number(value) || 0;
+  return new Intl.NumberFormat("id-ID", {
+    minimumFractionDigits: 0,
+    maximumFractionDigits: 2
+  }).format(num);
+}
+
+function formatMonthLabel(monthValue) {
+  if (!monthValue || !/^\d{4}-\d{2}$/.test(monthValue)) {
+    return monthValue || "-";
+  }
+  const [year, month] = monthValue.split("-");
+  const date = new Date(`${year}-${month}-01T00:00:00`);
+  return new Intl.DateTimeFormat("id-ID", {
+    month: "long",
+    year: "numeric"
+  }).format(date);
 }
 
 function submitRouteStandard(event) {
@@ -2619,4 +2758,696 @@ function statusTag(label, forceType = "") {
 
 function emptyRow(message) {
   return `<tr><td colspan="12">${safeText(message)}</td></tr>`;
+}
+
+// Cloud shared mode overrides (sync antar perangkat + multi-user)
+async function initCloudMode() {
+  appConfig = getAppConfig();
+  setCloudStatus("Mode Lokal");
+  setRoleChip("Role: Lokal");
+  updateAuthUi();
+
+  if (!appConfig.CLOUD_MODE) {
+    els.authHint.textContent = "Cloud mode nonaktif. Isi config.js lalu aktifkan CLOUD_MODE=true.";
+    return;
+  }
+
+  if (!appConfig.SUPABASE_URL || !appConfig.SUPABASE_ANON_KEY) {
+    els.authHint.textContent = "Supabase belum dikonfigurasi. Isi SUPABASE_URL dan SUPABASE_ANON_KEY pada config.js.";
+    return;
+  }
+
+  if (!window.supabase || !window.supabase.createClient) {
+    els.authHint.textContent = "Library Supabase gagal dimuat. Cek koneksi internet/CDN.";
+    return;
+  }
+
+  try {
+    supabaseClient = window.supabase.createClient(appConfig.SUPABASE_URL, appConfig.SUPABASE_ANON_KEY);
+    cloudReady = true;
+    setCloudStatus(appConfig.SHARED_TEAM_MODE ? "Cloud tim siap" : "Cloud siap");
+    els.authHint.textContent = appConfig.SHARED_TEAM_MODE
+      ? "Login akun cloud, lalu join tim agar data dipakai bersama."
+      : "Login cloud agar data sinkron lintas perangkat.";
+
+    const { data, error } = await supabaseClient.auth.getSession();
+    if (error) {
+      setCloudStatus("Cloud error");
+      showToast("Gagal membaca sesi cloud.", true);
+      return;
+    }
+
+    supabaseClient.auth.onAuthStateChange(async (_event, session) => {
+      await onSessionUserChanged(session?.user || null, true);
+    });
+
+    await onSessionUserChanged(data?.session?.user || null, true);
+  } catch (_error) {
+    setCloudStatus("Cloud error");
+    showToast("Inisialisasi cloud gagal.", true);
+  }
+}
+
+function getAppConfig() {
+  const config = window.APP_CONFIG || {};
+  return {
+    SUPABASE_URL: String(config.SUPABASE_URL || "").trim(),
+    SUPABASE_ANON_KEY: String(config.SUPABASE_ANON_KEY || "").trim(),
+    CLOUD_MODE: Boolean(config.CLOUD_MODE),
+    SHARED_TEAM_MODE: config.SHARED_TEAM_MODE !== false
+  };
+}
+
+function roleLabel(role) {
+  if (role === "admin") return "Admin";
+  if (role === "finance") return "Finance";
+  if (role === "operasional") return "Operasional";
+  if (role === "guest") return "Guest";
+  return "Lokal";
+}
+
+function normalizeRole(role) {
+  const text = String(role || "").toLowerCase().trim();
+  if (text === "admin" || text === "finance" || text === "operasional") {
+    return text;
+  }
+  return "guest";
+}
+
+function normalizeTeamCode(value) {
+  return String(value || "")
+    .toUpperCase()
+    .replace(/[^A-Z0-9-]/g, "")
+    .slice(0, 24);
+}
+
+function canCloudSync() {
+  if (!cloudReady || !cloudUser) return false;
+  if (appConfig?.SHARED_TEAM_MODE) {
+    return Boolean(currentTeam?.id);
+  }
+  return true;
+}
+
+function getCloudStateSource() {
+  if (!cloudUser) return null;
+  if (appConfig?.SHARED_TEAM_MODE) {
+    if (!currentTeam?.id) return null;
+    return {
+      table: "team_state",
+      key: "team_id",
+      value: currentTeam.id,
+      conflict: "team_id",
+      payload: { team_id: currentTeam.id }
+    };
+  }
+  return {
+    table: "app_state",
+    key: "user_id",
+    value: cloudUser.id,
+    conflict: "user_id",
+    payload: { user_id: cloudUser.id }
+  };
+}
+
+function updateAuthUi() {
+  if (!cloudReady) {
+    els.openAuthBtn.classList.remove("hidden");
+    els.openAuthBtn.textContent = "Login Cloud";
+    els.syncNowBtn.classList.add("hidden");
+    els.logoutBtn.classList.add("hidden");
+    setRoleChip("Role: Lokal");
+    applyRolePermissions();
+    return;
+  }
+
+  if (cloudUser) {
+    const email = cloudUser.email || "user";
+    const teamLabel = currentTeam ? ` | Tim ${currentTeam.code || currentTeam.name || "-"}` : "";
+    setCloudStatus(`Cloud: ${email}${teamLabel}`);
+    setRoleChip(`Role: ${roleLabel(currentRole)}`);
+    els.openAuthBtn.classList.add("hidden");
+    els.syncNowBtn.classList.remove("hidden");
+    els.logoutBtn.classList.remove("hidden");
+  } else {
+    setCloudStatus(appConfig?.SHARED_TEAM_MODE ? "Cloud tim siap (belum login)" : "Cloud siap (belum login)");
+    setRoleChip("Role: Lokal");
+    els.openAuthBtn.classList.remove("hidden");
+    els.openAuthBtn.textContent = "Login Cloud";
+    els.syncNowBtn.classList.add("hidden");
+    els.logoutBtn.classList.add("hidden");
+  }
+  applyRolePermissions();
+}
+
+async function onSessionUserChanged(user, silent = false) {
+  cloudUser = user || null;
+  currentTeam = null;
+  currentRole = cloudUser ? "guest" : "local";
+  currentTeamMembers = [];
+  teamMembersLoading = false;
+  renderTeamAdminPanel();
+
+  if (!cloudUser) {
+    updateAuthUi();
+    return;
+  }
+
+  await refreshTeamContext(silent);
+  updateAuthUi();
+
+  if (canCloudSync()) {
+    await pullCloudState(true);
+    await refreshTeamMembers(true);
+  } else if (appConfig?.SHARED_TEAM_MODE) {
+    setCloudStatus("Belum join tim");
+    if (!silent) {
+      showToast("Akun ini belum tergabung tim. Isi Team Code lalu klik Join Tim.", true);
+      openAuthModal();
+    }
+  }
+  applyRolePermissions();
+  renderTeamAdminPanel();
+}
+
+async function refreshTeamContext(silent = false) {
+  if (!cloudReady || !cloudUser) return;
+  if (!appConfig?.SHARED_TEAM_MODE) {
+    currentRole = "admin";
+    currentTeam = {
+      id: cloudUser.id,
+      code: "PERSONAL",
+      name: "Personal"
+    };
+    return;
+  }
+
+  const { data, error } = await supabaseClient
+    .from("team_members")
+    .select("team_id, role, teams!inner(id, code, name)")
+    .eq("user_id", cloudUser.id)
+    .limit(1)
+    .maybeSingle();
+
+  if (error) {
+    if (!silent) {
+      showToast(`Gagal membaca tim: ${error.message}`, true);
+    }
+    currentTeam = null;
+    currentRole = "guest";
+    return;
+  }
+
+  if (!data) {
+    currentTeam = null;
+    currentRole = "guest";
+    return;
+  }
+
+  currentTeam = {
+    id: data.team_id,
+    code: data.teams?.code || "",
+    name: data.teams?.name || ""
+  };
+  currentRole = normalizeRole(data.role);
+}
+
+function openAuthModal() {
+  if (!cloudReady) {
+    showToast("Cloud belum aktif. Cek config.js.", true);
+    return;
+  }
+  els.authModal.classList.remove("hidden");
+}
+
+function closeAuthModal() {
+  els.authModal.classList.add("hidden");
+}
+
+function onAuthBackdropClick(event) {
+  if (event.target === els.authModal) {
+    closeAuthModal();
+  }
+}
+
+async function onLoginSubmit(event) {
+  event.preventDefault();
+  if (!cloudReady) return;
+
+  const email = els.authEmail.value.trim();
+  const password = els.authPassword.value;
+  if (!email || !password) {
+    showToast("Email dan password wajib diisi.", true);
+    return;
+  }
+
+  const { data, error } = await supabaseClient.auth.signInWithPassword({ email, password });
+  if (error) {
+    showToast(`Login gagal: ${error.message}`, true);
+    return;
+  }
+
+  cloudUser = data?.user || cloudUser;
+  await refreshTeamContext(true);
+  if (appConfig?.SHARED_TEAM_MODE && !currentTeam?.id) {
+    await tryJoinTeamFromForm(true);
+  }
+  await onSessionUserChanged(cloudUser, true);
+
+  if (appConfig?.SHARED_TEAM_MODE && !currentTeam?.id) {
+    showToast("Login berhasil. Isi Team Code lalu klik Join Tim.");
+    return;
+  }
+
+  showToast("Login cloud berhasil.");
+  if (!appConfig?.SHARED_TEAM_MODE || currentTeam?.id) {
+    closeAuthModal();
+    els.authForm.reset();
+  }
+}
+
+async function onRegisterClick() {
+  if (!cloudReady) return;
+  const email = els.authEmail.value.trim();
+  const password = els.authPassword.value;
+  if (!email || !password) {
+    showToast("Isi email dan password untuk daftar akun.", true);
+    return;
+  }
+
+  const { data, error } = await supabaseClient.auth.signUp({ email, password });
+  if (error) {
+    showToast(`Registrasi gagal: ${error.message}`, true);
+    return;
+  }
+
+  if (data?.user && data?.session) {
+    cloudUser = data.user;
+    await tryJoinTeamFromForm(false);
+    await onSessionUserChanged(cloudUser, true);
+  }
+
+  showToast("Akun dibuat. Jika diminta, cek email verifikasi lalu login.");
+}
+
+async function onJoinTeamClick() {
+  if (!cloudReady || !cloudUser) {
+    showToast("Login cloud terlebih dahulu.", true);
+    return;
+  }
+  if (!appConfig?.SHARED_TEAM_MODE) {
+    showToast("Mode tim tidak aktif di konfigurasi.", true);
+    return;
+  }
+  await tryJoinTeamFromForm(false);
+}
+
+async function tryJoinTeamFromForm(silent = false) {
+  const teamCode = normalizeTeamCode(els.authTeamCode.value);
+  const teamName = String(els.authTeamName.value || "").trim();
+  const desiredRole = normalizeRole(els.authRole.value);
+
+  if (!teamCode) {
+    if (!silent) {
+      showToast("Isi Team Code untuk join tim.", true);
+    }
+    return false;
+  }
+
+  const joined = await ensureTeamMembership(teamCode, teamName, desiredRole, silent);
+  if (!joined) {
+    return false;
+  }
+
+  await refreshTeamContext(true);
+  updateAuthUi();
+  await pullCloudState(true);
+  await refreshTeamMembers(true);
+  showToast(`Berhasil tergabung tim ${teamCode}. Role Anda: ${roleLabel(currentRole)}.`);
+  closeAuthModal();
+  return true;
+}
+
+async function ensureTeamMembership(teamCode, teamName, desiredRole, silent = false) {
+  if (!cloudReady || !cloudUser) return false;
+
+  const normalizedCode = normalizeTeamCode(teamCode);
+  const normalizedRole = normalizeRole(desiredRole);
+  if (!normalizedCode) return false;
+
+  let team = null;
+  let createdNewTeam = false;
+
+  const found = await supabaseClient
+    .from("teams")
+    .select("id, code, name")
+    .eq("code", normalizedCode)
+    .maybeSingle();
+
+  if (found.error) {
+    if (!silent) {
+      showToast(`Gagal mencari tim: ${found.error.message}`, true);
+    }
+    return false;
+  }
+
+  if (found.data) {
+    team = found.data;
+  } else {
+    const payload = {
+      code: normalizedCode,
+      name: teamName || `Team ${normalizedCode}`,
+      created_by: cloudUser.id
+    };
+    const created = await supabaseClient
+      .from("teams")
+      .insert(payload)
+      .select("id, code, name")
+      .single();
+
+    if (created.error) {
+      const isDuplicate = String(created.error.code || "") === "23505";
+      if (isDuplicate) {
+        const recheck = await supabaseClient
+          .from("teams")
+          .select("id, code, name")
+          .eq("code", normalizedCode)
+          .maybeSingle();
+        if (!recheck.error && recheck.data) {
+          team = recheck.data;
+        } else {
+          if (!silent) {
+            showToast("Team code sudah ada, tapi belum bisa dibaca. Jalankan update policy SQL terbaru.", true);
+          }
+          return false;
+        }
+      } else {
+        if (!silent) {
+          showToast(`Gagal membuat tim: ${created.error.message}`, true);
+        }
+        return false;
+      }
+    } else {
+      team = created.data;
+      createdNewTeam = true;
+    }
+  }
+
+  if (!team?.id) {
+    if (!silent) {
+      showToast("Team tidak ditemukan. Coba ulangi join tim.", true);
+    }
+    return false;
+  }
+
+  const existingMember = await supabaseClient
+    .from("team_members")
+    .select("id, role")
+    .eq("team_id", team.id)
+    .eq("user_id", cloudUser.id)
+    .maybeSingle();
+
+  if (existingMember.error) {
+    if (!silent) {
+      showToast(`Gagal membaca membership tim: ${existingMember.error.message}`, true);
+    }
+    return false;
+  }
+
+  let memberRole = createdNewTeam ? "admin" : (normalizedRole === "admin" ? "operasional" : normalizedRole);
+  if (existingMember.data) {
+    memberRole = normalizeRole(existingMember.data.role);
+  } else {
+    const insertMember = await supabaseClient
+      .from("team_members")
+      .insert({
+        team_id: team.id,
+        user_id: cloudUser.id,
+        role: memberRole
+      });
+
+    if (insertMember.error) {
+      if (!silent) {
+        showToast(`Gagal join tim: ${insertMember.error.message}`, true);
+      }
+      return false;
+    }
+  }
+
+  if (!memberRole || memberRole === "guest") {
+    if (!silent) {
+      showToast("Role tim tidak valid.", true);
+    }
+    return false;
+  }
+
+  currentTeam = {
+    id: team.id,
+    code: team.code,
+    name: team.name
+  };
+  currentRole = memberRole;
+  return true;
+}
+
+async function onLogoutClick() {
+  if (!cloudReady || !cloudUser) return;
+  const { error } = await supabaseClient.auth.signOut();
+  if (error) {
+    showToast(`Logout gagal: ${error.message}`, true);
+    return;
+  }
+  currentTeam = null;
+  currentRole = "local";
+  currentTeamMembers = [];
+  teamMembersLoading = false;
+  updateAuthUi();
+  renderTeamAdminPanel();
+  showToast("Logout berhasil.");
+}
+
+async function onSyncNowClick() {
+  if (!canCloudSync()) {
+    showToast("Login cloud dan pastikan sudah join tim.", true);
+    return;
+  }
+  await pushStateToCloud("manual");
+}
+
+async function refreshTeamMembers(silent = false) {
+  if (!cloudReady || !cloudUser || !currentTeam?.id) {
+    currentTeamMembers = [];
+    teamMembersLoading = false;
+    renderTeamAdminPanel();
+    return;
+  }
+
+  teamMembersLoading = true;
+  renderTeamAdminPanel();
+
+  const { data, error } = await supabaseClient
+    .from("team_members")
+    .select("id, user_id, role, created_at")
+    .eq("team_id", currentTeam.id)
+    .order("created_at", { ascending: true });
+
+  teamMembersLoading = false;
+
+  if (error) {
+    if (!silent) {
+      showToast(`Gagal memuat anggota tim: ${error.message}`, true);
+    }
+    renderTeamAdminPanel();
+    return;
+  }
+
+  currentTeamMembers = Array.isArray(data) ? data : [];
+  renderTeamAdminPanel();
+}
+
+function renderTeamAdminPanel() {
+  els.adminTeamCode.textContent = safeText(currentTeam?.code || "-");
+  els.adminTeamName.textContent = safeText(currentTeam?.name || "-");
+  els.adminTeamId.textContent = safeText(currentTeam?.id || "-");
+  els.adminTeamTotalMembers.textContent = String(currentTeamMembers.length || 0);
+
+  if (!cloudUser) {
+    els.adminTeamHint.textContent = "Login cloud terlebih dahulu untuk mengelola tim.";
+    els.teamMembersTableBody.innerHTML = emptyRow("Belum login cloud.");
+    return;
+  }
+
+  if (!currentTeam?.id) {
+    els.adminTeamHint.textContent = "Akun belum tergabung tim. Isi Team Code lalu klik Join Tim.";
+    els.teamMembersTableBody.innerHTML = emptyRow("Belum join tim.");
+    return;
+  }
+
+  if (!hasPermission("team_member_manage")) {
+    els.adminTeamHint.textContent = `Role Anda ${roleLabel(currentRole)}. Hanya Admin yang bisa ubah role anggota.`;
+  } else {
+    els.adminTeamHint.textContent = "Admin dapat mengubah role anggota tim dari tabel di bawah.";
+  }
+
+  if (teamMembersLoading) {
+    els.teamMembersTableBody.innerHTML = emptyRow("Memuat anggota tim...");
+    return;
+  }
+
+  if (currentTeamMembers.length === 0) {
+    els.teamMembersTableBody.innerHTML = emptyRow("Belum ada anggota tim.");
+    return;
+  }
+
+  const rows = currentTeamMembers.map((member, index) => {
+    const isSelf = member.user_id === cloudUser?.id;
+    const joinedAt = formatDate(member.created_at);
+    const roleOptions = ["admin", "operasional", "finance"]
+      .map((role) => `<option value="${role}"${role === member.role ? " selected" : ""}>${roleLabel(role)}</option>`)
+      .join("");
+
+    const roleSelectId = `member-role-${safeText(member.id)}`;
+    const canManage = hasPermission("team_member_manage");
+    const actionDisabled = !canManage ? " disabled" : "";
+    const selectDisabled = !canManage ? " disabled" : "";
+    const selfBadge = isSelf ? " <strong>(Anda)</strong>" : "";
+
+    return `
+      <tr>
+        <td>${index + 1}</td>
+        <td>${safeText(member.user_id)}${selfBadge}</td>
+        <td>
+          <select id="${roleSelectId}"${selectDisabled}>
+            ${roleOptions}
+          </select>
+        </td>
+        <td>${safeText(joinedAt)}</td>
+        <td>
+          <div class="row-actions">
+            <button type="button" data-action="save-member-role" data-id="${safeText(member.id)}"${actionDisabled}>Simpan Role</button>
+          </div>
+        </td>
+      </tr>
+    `;
+  });
+  els.teamMembersTableBody.innerHTML = rows.join("");
+}
+
+async function onTeamMembersActionClick(event) {
+  const button = event.target.closest("button");
+  if (!button) return;
+
+  const action = button.dataset.action;
+  const memberId = button.dataset.id;
+  if (action !== "save-member-role" || !memberId) return;
+
+  if (!guardPermission("team_member_manage", "Hanya Admin yang bisa mengubah role anggota.")) {
+    return;
+  }
+
+  const member = currentTeamMembers.find((item) => item.id === memberId);
+  if (!member) {
+    showToast("Data anggota tidak ditemukan.", true);
+    return;
+  }
+
+  const selectEl = document.getElementById(`member-role-${memberId}`);
+  if (!selectEl) {
+    showToast("Input role tidak ditemukan.", true);
+    return;
+  }
+  const nextRole = normalizeRole(selectEl.value);
+  if (nextRole === "guest" || nextRole === "local") {
+    showToast("Role tidak valid.", true);
+    return;
+  }
+  if (nextRole === member.role) {
+    showToast("Role tidak berubah.");
+    return;
+  }
+
+  const isSelf = member.user_id === cloudUser?.id;
+  const adminCount = currentTeamMembers.filter((item) => item.role === "admin").length;
+  if (member.role === "admin" && nextRole !== "admin" && adminCount <= 1) {
+    showToast("Tidak bisa mengubah admin terakhir. Tambah admin lain dulu.", true);
+    selectEl.value = member.role;
+    return;
+  }
+  if (isSelf && member.role === "admin" && nextRole !== "admin") {
+    showToast("Untuk keamanan, Anda tidak bisa menurunkan role diri sendiri dari halaman ini.", true);
+    selectEl.value = member.role;
+    return;
+  }
+
+  const { error } = await supabaseClient
+    .from("team_members")
+    .update({ role: nextRole })
+    .eq("id", member.id)
+    .eq("team_id", currentTeam.id);
+
+  if (error) {
+    showToast(`Gagal update role: ${error.message}`, true);
+    selectEl.value = member.role;
+    return;
+  }
+
+  if (isSelf) {
+    currentRole = nextRole;
+    updateAuthUi();
+  }
+
+  showToast("Role anggota berhasil diperbarui.");
+  await refreshTeamMembers(true);
+  applyRolePermissions();
+}
+
+function hasPermission(permission) {
+  if (!cloudUser || !appConfig?.SHARED_TEAM_MODE) {
+    return true;
+  }
+  const role = normalizeRole(currentRole);
+  if (role === "admin") return true;
+
+  const matrix = {
+    job_create: ["operasional"],
+    advance_create: ["operasional"],
+    advance_approve_ops: ["operasional"],
+    advance_approve_finance: ["finance"],
+    disbursement_manage: ["finance"],
+    lpj_submit: ["operasional"],
+    lpj_verify: ["finance"],
+    settlement_manage: ["finance"],
+    route_manage: ["operasional"],
+    team_member_manage: ["admin"]
+  };
+  const allowed = matrix[permission] || ["operasional", "finance"];
+  return allowed.includes(role);
+}
+
+function applyRolePermissions() {
+  const controls = [
+    { selector: "#jobForm button[type='submit']", permission: "job_create" },
+    { selector: "#applyRouteStandardBtn", permission: "job_create" },
+    { selector: "#advanceForm button[type='submit']", permission: "advance_create" },
+    { selector: "#disbursementForm button[type='submit']", permission: "disbursement_manage" },
+    { selector: "#lpjForm button[type='submit']", permission: "lpj_submit" },
+    { selector: "#settlementForm button[type='submit']", permission: "settlement_manage" },
+    { selector: "#routeForm button[type='submit']", permission: "route_manage" },
+    { selector: "#adminRefreshMembersBtn", permission: "team_member_manage" }
+  ];
+
+  controls.forEach((item) => {
+    const el = document.querySelector(item.selector);
+    if (!el) return;
+    const allowed = hasPermission(item.permission);
+    el.disabled = !allowed;
+    el.title = allowed ? "" : "Role Anda tidak memiliki akses untuk aksi ini.";
+  });
+
+  const adminTabBtn = document.querySelector(".tab-btn[data-tab='admin']");
+  if (adminTabBtn) {
+    const allowOpen = !cloudUser || !appConfig?.SHARED_TEAM_MODE ? true : hasPermission("team_member_manage");
+    adminTabBtn.disabled = !allowOpen;
+    adminTabBtn.title = allowOpen ? "" : "Hanya Admin yang dapat membuka menu Admin Tim.";
+  }
 }

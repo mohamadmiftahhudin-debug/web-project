@@ -82,6 +82,22 @@ body {
   margin-bottom: 14px;
 }
 
+.hero-brand {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.company-logo {
+  width: 62px;
+  height: 62px;
+  object-fit: contain;
+  border-radius: 10px;
+  border: 1px solid #dfe8e6;
+  background: #fff;
+  padding: 6px;
+}
+
 .eyebrow {
   margin: 0 0 2px 0;
   letter-spacing: 1.2px;
@@ -154,6 +170,21 @@ body {
   background: var(--primary);
   border-color: var(--primary);
   color: white;
+}
+
+.tab-btn:disabled,
+.primary-btn:disabled,
+.ghost-btn:disabled,
+.row-actions button:disabled {
+  opacity: 0.56;
+  cursor: not-allowed;
+}
+
+.tab-btn:disabled:hover,
+.primary-btn:disabled:hover,
+.ghost-btn:disabled:hover,
+.row-actions button:disabled:hover {
+  background: inherit;
 }
 
 .panel {
@@ -634,6 +665,11 @@ tbody tr {
 @media (max-width: 900px) {
   .hero {
     flex-direction: column;
+  }
+
+  .company-logo {
+    width: 52px;
+    height: 52px;
   }
 
   .header-right {
