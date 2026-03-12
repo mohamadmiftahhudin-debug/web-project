@@ -3210,17 +3210,63 @@ async function ensureTeamMembership(teamCode, teamName, desiredRole, silent = fa
   return true;
 }
 
-async function onLogoutClick() {
-  if (!cloudReady || !cloudUser) return;
-  const { error } = await supabaseClient.auth.signOut();
-  if (error) {
-    showToast(`Logout gagal: ${error.message}`, true);
+function getSupabaseProjectRef() {
+  try {
+    const url = String(appConfig?.SUPABASE_URL || "");
+    if (!url) return "";
+    const host = new URL(url).hostname;
+    return host.split(".")[0] || "";
+  } catch {
+    return "";
+  }
+}
+
+function clearSupabaseBrowserSessionCache() {
+  const ref = getSupabaseProjectRef();
+  if (!ref) return;
+  const prefix = `sb-${ref}-`;
+  const stores = [window.localStorage, window.sessionStorage];
+  stores.forEach((store) => {
+    for (let i = store.length - 1; i >= 0; i -= 1) {
+      const key = store.key(i);
+      if (key && key.startsWith(prefix)) {
+        store.removeItem(key);
+      }
+    }
+  });
+}
+
+async function onLogoutClick(event) {
+  if (event?.preventDefault) event.preventDefault();
+  if (event?.stopPropagation) event.stopPropagation();
+
+  if (!cloudReady || !cloudUser) {
+    updateAuthUi();
     return;
   }
+
+  // Bersihkan cache sesi terlebih dahulu agar tidak ikut alur redirect dari sesi lama.
+  clearSupabaseBrowserSessionCache();
+
+  try {
+    const { error } = await supabaseClient.auth.signOut({ scope: "local" });
+    if (error) {
+      showToast(`Logout warning: ${error.message}`, true);
+    }
+  } catch (_err) {
+    // Tetap lanjut reset UI walau request signout gagal.
+  }
+
+  // Pastikan tetap di URL aplikasi ini.
+  window.history.replaceState({}, "", `${window.location.pathname}${window.location.search}`);
+
   currentTeam = null;
   currentRole = "local";
   currentTeamMembers = [];
   teamMembersLoading = false;
+  cloudUser = null;
+  clearSupabaseBrowserSessionCache();
+
   updateAuthUi();
   renderTeamAdminPanel();
   showToast("Logout berhasil.");
