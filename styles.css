@@ -31,6 +31,7 @@ body {
   min-height: 100vh;
   position: relative;
   overflow-x: hidden;
+  line-height: 1.45;
 }
 
 .bg-shape {
@@ -80,6 +81,11 @@ body {
   align-items: flex-start;
   gap: 16px;
   margin-bottom: 14px;
+  background: rgba(255, 255, 255, 0.84);
+  border: 1px solid #dce8e5;
+  border-radius: 20px;
+  padding: 14px 16px;
+  box-shadow: 0 10px 26px rgba(8, 44, 44, 0.07);
 }
 
 .hero-brand {
@@ -91,7 +97,7 @@ body {
 .company-logo {
   width: 74px;
   height: 74px;
-  object-fit: contain;
+  object-fit: cover;
   border-radius: 10px;
   border: 1px solid #dfe8e6;
   background: #fff;
@@ -152,25 +158,49 @@ body {
   display: flex;
   gap: 8px;
   overflow: auto;
-  padding-bottom: 6px;
+  padding: 8px;
   margin-bottom: 16px;
+  position: sticky;
+  top: 6px;
+  z-index: 10;
+  background: rgba(244, 248, 245, 0.95);
+  border: 1px solid #dbe6e3;
+  border-radius: 14px;
+  box-shadow: 0 8px 20px rgba(10, 40, 39, 0.06);
 }
 
 .tab-btn {
   border: 1px solid var(--line);
   background: var(--surface);
   color: var(--muted);
-  padding: 8px 13px;
+  padding: 9px 14px;
   border-radius: 12px;
   cursor: pointer;
   font-weight: 700;
   white-space: nowrap;
+  transition: background-color 160ms ease, border-color 160ms ease, color 160ms ease, transform 120ms ease;
+}
+
+.tab-btn:hover {
+  border-color: #bcd2ce;
+  color: #2c4345;
+  transform: translateY(-1px);
 }
 
 .tab-btn.active {
   background: var(--primary);
   border-color: var(--primary);
   color: white;
+}
+
+.friendly-note {
+  margin: -2px 0 14px 0;
+  background: #eef8f6;
+  border: 1px solid #d6e8e3;
+  border-radius: 12px;
+  color: #335355;
+  font-size: 0.9rem;
+  padding: 8px 12px;
 }
 
 .tab-btn:disabled,
@@ -205,6 +235,44 @@ body {
   box-shadow: var(--shadow);
 }
 
+.onboarding-card {
+  background: linear-gradient(150deg, #fbfffe 0%, #f2fbf8 100%);
+  border-color: #d2e6e1;
+}
+
+.steps-grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(180px, 1fr));
+  gap: 10px;
+}
+
+.step-item {
+  background: #ffffff;
+  border: 1px solid #deece8;
+  border-radius: 12px;
+  padding: 12px;
+  display: grid;
+  gap: 8px;
+}
+
+.step-item h3 {
+  margin: 0;
+  font-size: 1rem;
+  color: #154243;
+}
+
+.step-item p {
+  margin: 0;
+  color: #4d6263;
+  font-size: 0.9rem;
+}
+
+.step-actions {
+  display: flex;
+  gap: 6px;
+  flex-wrap: wrap;
+}
+
 .card-head {
   display: flex;
   justify-content: space-between;
@@ -214,7 +282,7 @@ body {
 
 .card h2 {
   margin: 0;
-  font-size: 1.06rem;
+  font-size: 1.08rem;
 }
 
 .kpi-grid {
@@ -259,8 +327,9 @@ body {
 }
 
 label {
-  font-size: 0.88rem;
-  color: var(--muted);
+  font-size: 0.9rem;
+  color: #3a5759;
+  font-weight: 700;
   display: grid;
   gap: 5px;
 }
@@ -270,8 +339,8 @@ select,
 textarea {
   border: 1px solid var(--line);
   border-radius: 10px;
-  padding: 9px 10px;
-  font-size: 0.93rem;
+  padding: 10px 11px;
+  font-size: 0.95rem;
   color: var(--text);
   background: #fff;
 }
@@ -301,6 +370,7 @@ input[readonly] {
   cursor: pointer;
   font-weight: 800;
   padding: 10px 13px;
+  transition: all 160ms ease;
 }
 
 .primary-btn {
@@ -310,6 +380,7 @@ input[readonly] {
 
 .primary-btn:hover {
   background: var(--primary-strong);
+  transform: translateY(-1px);
 }
 
 .ghost-btn {
@@ -320,6 +391,7 @@ input[readonly] {
 
 .ghost-btn:hover {
   background: #f2f7f6;
+  transform: translateY(-1px);
 }
 
 .small-btn {
@@ -368,6 +440,14 @@ th {
 
 tbody tr {
   animation: row-pop 260ms ease;
+}
+
+tbody tr:nth-child(even) {
+  background: #fbfdfc;
+}
+
+tbody tr:hover {
+  background: #f1faf8;
 }
 
 @keyframes row-pop {
@@ -682,11 +762,15 @@ tbody tr {
   }
 
   .tabs {
-    padding-bottom: 10px;
+    top: 4px;
   }
 
   .print-sheet {
     padding: 14px;
+  }
+
+  .steps-grid {
+    grid-template-columns: 1fr;
   }
 
   .print-sign-grid,

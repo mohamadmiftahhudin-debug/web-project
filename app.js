@@ -190,19 +190,31 @@ function bindElements() {
   });
 }
 
-function bindTabs() {
+function openTab(tabKey) {
+  const key = String(tabKey || "").trim();
+  if (!key) return;
+
   const tabButtons = document.querySelectorAll(".tab-btn");
   const panels = document.querySelectorAll(".panel");
+  const targetButton = document.querySelector(`.tab-btn[data-tab="${key}"]`);
+  const targetPanel = document.getElementById(`tab-${key}`);
+  if (!targetButton || !targetPanel || targetButton.disabled) return;
+
+  tabButtons.forEach((item) => item.classList.toggle("active", item === targetButton));
+  panels.forEach((panel) => panel.classList.toggle("active", panel === targetPanel));
+}
+
+function bindTabs() {
+  const tabButtons = document.querySelectorAll(".tab-btn");
   tabButtons.forEach((btn) => {
+    btn.addEventListener("click", () => openTab(btn.dataset.tab));
+  });
+
+  const goTabButtons = document.querySelectorAll(".go-tab-btn");
+  goTabButtons.forEach((btn) => {
     btn.addEventListener("click", () => {
-      tabButtons.forEach((item) => item.classList.remove("active"));
-      panels.forEach((panel) => panel.classList.remove("active"));
-      btn.classList.add("active");
-      const key = btn.dataset.tab;
-      const panel = document.getElementById(`tab-${key}`);
-      if (panel) {
-        panel.classList.add("active");
-      }
+      openTab(btn.dataset.goTab);
+      document.getElementById("tabs")?.scrollIntoView({ behavior: "smooth", block: "start" });
     });
   });
 }
